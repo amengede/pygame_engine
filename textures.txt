@@ -1,0 +1,7 @@
+c0(1,tex/ceiling0.jpg,tex/ceiling0_specular.jpg,32)
+c1(1,tex/ceiling1.jpg,tex/ceiling1_specular.jpg,64)
+f0(1,tex/floor0.jpg,tex/floor0_specular.jpg,16)
+f1(1,tex/floor1.jpg,tex/floor1_specular.jpg,128)
+w0(1,tex/wall.jpg,tex/wall_specular.jpg,64)
+w1(1,tex/wall1.jpg,tex/wall1_specular.jpg,8)
+m0(1,tex/metal.png,tex/metal_specular.png,256)
