@@ -294,7 +294,7 @@ def importTextures(filename):
             elif line[0]=='f':
                 target = TEXTURES["floor"]
             elif line[0]=='m':
-                target = TEXTURES["metal"]
+                target = TEXTURES["misc"]
             else:
                 target = TEXTURES["ceiling"]
             beginning = line.find('(')
@@ -303,8 +303,9 @@ def importTextures(filename):
             diffuse = line[1]
             specular = line[2]
             shininess = int(line[3])
+            emissive = int(line[4])
 
-            target.append(Material(ambient,diffuse,specular,shininess))
+            target.append(Material(ambient,diffuse,specular,shininess,emissive))
             
             line = f.readline()
 
@@ -345,7 +346,7 @@ def addLights(sector):
 class ObjModel:
     def __init__(self,filepath):
 
-        attributeMap = {'V':0,'T':1,'N':2}
+        attributeMap = {'V':0,'N':1,'T':2}
         datatypeMap = {'F':GL_FLOAT}
 
         attributes = []
@@ -354,6 +355,8 @@ class ObjModel:
         for name, material in scene.materials.items():
             vertex_format = material.vertex_format.split("_")
             vertices = material.vertices
+            #print(vertex_format)
+            #print(vertices)
 
         stride = 0
         for item in vertex_format:
@@ -395,6 +398,11 @@ class Player:
         self.currentSector = None
         self.lastSector = None
         self.gun = ObjModel("models/rifle.obj")
+        self.sky = ObjModel("models/skybox.obj")
+        self.walk_t = 0
+        #0: ready, 1: reloading
+        self.gun_state = 0
+        self.gun_t = 0
     
     def setCurrentSector(self,newSector):
         self.currentSector = newSector
@@ -432,6 +440,13 @@ class Player:
         
         if walking:
             self.walk(walk_direction)
+            self.walk_t += t/5
+            if self.walk_t>360:
+                self.walk_t -= 360
+        else:
+            self.walk_t -= t
+            if self.walk_t<0:
+                self.walk_t = 0
         
         if self.currentSector == None:
             for obj in FLOORS:
@@ -442,9 +457,15 @@ class Player:
         if self.currentSector != None:
             addLights(self.currentSector)
 
-        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,280,dtype=np.float32)
+        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,350,dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
         glUniform3fv(glGetUniformLocation(shader,"viewPos"),1,self.position)
+
+        if self.gun_state==1:
+            self.gun_t += t/2
+            if self.gun_t >=0:
+                self.gun_t = 0
+                self.gun_state = 0
     
     def walk(self,walk_direction):
         actual_direction = self.theta + walk_direction
@@ -472,31 +493,51 @@ class Player:
             self.lastSector = self.currentSector
     
     def look(self):
-        self.cos_phi = np.cos(np.radians(self.phi),dtype=np.float32)
-        self.sin_phi = np.sin(np.radians(self.phi),dtype=np.float32)
-        self.cos_theta = np.cos(np.radians(self.theta),dtype=np.float32)
-        self.sin_theta = np.sin(np.radians(self.theta),dtype=np.float32)
+        cos_phi = np.cos(np.radians(self.phi),dtype=np.float32)
+        sin_phi = np.sin(np.radians(self.phi),dtype=np.float32)
+        cos_theta = np.cos(np.radians(self.theta),dtype=np.float32)
+        sin_theta = np.sin(np.radians(self.theta),dtype=np.float32)
 
         #get lookat
-        look_direction = np.array([self.cos_phi*self.cos_theta,self.cos_phi*self.sin_theta,self.sin_phi],dtype=np.float32)
+        look_direction = np.array([cos_phi*cos_theta, cos_phi*sin_theta, sin_phi],dtype=np.float32)
         up = np.array([0,0,1],dtype=np.float32)
         camera_right = pyrr.vector3.cross(up,look_direction)
         camera_up = pyrr.vector3.cross(look_direction,camera_right)
+        look_target = self.position + look_direction
 
-        lookat_matrix = pyrr.matrix44.create_look_at(self.position,self.position + look_direction, camera_up, dtype=np.float32)
+        lookat_matrix = pyrr.matrix44.create_look_at(self.position,look_target, camera_up, dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
 
-    def draw(self):
-        self.gun_translate = pyrr.matrix44.create_from_translation(self.position+np.array([0.5*self.cos_phi*self.cos_theta,0.5*self.cos_phi*self.sin_theta,-1],dtype=np.float32))
-        self.gun_rotate = pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta),dtype=np.float32)
-        self.gun_rotate2 = pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32)
-        self.gun_model = pyrr.matrix44.multiply(self.gun_rotate2,self.gun_rotate)
-        self.gun_model = pyrr.matrix44.multiply(self.gun_model,self.gun_translate)
-        TEXTURES["metal"][0].use()
+        #gun model transform
+        gun_local = pyrr.matrix44.create_from_translation(np.array([-1+np.sin(np.radians(self.walk_t)),1-np.sin(np.radians(self.gun_t)),-1],dtype=np.float32),dtype=np.float32)
+        gun_position = pyrr.matrix44.create_from_translation(look_target,dtype=np.float32)
+        gun_rotate = pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta),dtype=np.float32)
+        gun_rotate2 = pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32)
+        self.gun_model = pyrr.matrix44.multiply(gun_local,gun_rotate2)
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model,gun_rotate)
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model,gun_position)
 
+        #sky model transform
+        self.sky_model = pyrr.matrix44.create_from_translation(self.position,dtype=np.float32)
+
+    def draw(self):
+        #draw gun
+        TEXTURES["misc"][0].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.gun_model)
         glBindVertexArray(self.gun.getVAO())
         glDrawArrays(GL_TRIANGLES,0,self.gun.getVertexCount())
+
+        #draw sky
+        TEXTURES["misc"][1].use()
+        glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.sky_model)
+        glBindVertexArray(self.sky.getVAO())
+        glDrawArrays(GL_TRIANGLES,0,self.sky.getVertexCount())
+
+    def shoot(self):
+        if self.gun_state==0:
+            self.gun_state = 1
+            self.gun_t = -90
+            #some code to shoot
 
 class Wall:
     def __init__(self,pos_a,pos_b,z,height,texture):
@@ -810,8 +851,7 @@ class Ceiling:
 class Light:
     def __init__(self,position,colour):
         self.position = position
-        self.colour = np.array([256*random.random(),256*random.random(),256*random.random()],dtype=np.float32)
-        self.lightVelocity = np.array([1 - 2*random.random(),1 - 2*random.random(),1 - 2*random.random()],dtype=np.float32)
+        self.colour = colour
         self.active = True
         self.height = 1
         self.velocity = np.array([1 - 2*random.random(),1 - 2*random.random(),1 - 2*random.random()],dtype=np.float32)
@@ -823,36 +863,6 @@ class Light:
 
     def update(self):
         global current_lights
-        """
-        checkX = self.position + np.array([self.velocity[0],0,0],dtype=np.float32)
-        if checkCollisions(self,self.position,checkX):
-            self.velocity[0] *= -1
-        
-        checkY = self.position + np.array([0,self.velocity[1],0],dtype=np.float32)
-        if checkCollisions(self,self.position,checkY):
-            self.velocity[1] *= -1
-        
-        if self.velocity[2]<0 and self.position[2]<0:
-            self.velocity[2] *= -1
-        elif self.velocity[2]>0 and self.position[2]>40:
-            self.velocity[2] *= -1
-        
-        self.position += min(t,10)*self.velocity/20
-        
-        self.colour += t*self.lightVelocity/20
-        if self.colour[0]<0:
-            self.colour[0] += 256
-        elif self.colour[0]>256:
-            self.colour[0] -= 256
-        if self.colour[1]<0:
-            self.colour[1] += 256
-        elif self.colour[1]>256:
-            self.colour[1] -= 256
-        if self.colour[2]<0:
-            self.colour[2] += 256
-        elif self.colour[2]>256:
-            self.colour[2] -= 256
-        """
         if self.active and current_lights<MAX_LIGHTS:
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].isOn'),1,True)
 
@@ -860,8 +870,8 @@ class Light:
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].strength'),1,1)
 
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].constant'),1,1.0)
-            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].linear'),1,0.2)
-            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].quadratic'),1,0.1)
+            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].linear'),1,0.4)
+            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].quadratic'),1,0.2)
 
             glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].ambient'),1,0)
             glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].diffuse'),1,1.0*self.colour)
@@ -878,7 +888,7 @@ class Light:
         return self.tag
 
 class Material:
-    def __init__(self,ambient,diffuse,specular,shininess):
+    def __init__(self,ambient,diffuse,specular,shininess,emissive):
         #ambient
         self.ambient = np.array([ambient,ambient,ambient],dtype=np.float32)
 
@@ -911,11 +921,14 @@ class Material:
         glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,image_data)
 
         #shininess
-        self.shininess = 32
+        self.shininess = shininess
+
+        self.emissive = emissive
 
     def use(self):
         glUniform3fv(glGetUniformLocation(shader,"material.ambient"),1,self.ambient)
         glUniform1fv(glGetUniformLocation(shader,"material.shininess"),1,self.shininess)
+        glUniform1iv(glGetUniformLocation(shader,"material.emissive"),1,self.emissive)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D,self.diffuse)
         glActiveTexture(GL_TEXTURE1)
@@ -927,7 +940,7 @@ FLOORS = []
 CEILINGS = []
 WALLS = []
 LIGHTS = []
-TEXTURES = {"floor":[],"wall":[],"ceiling":[],"metal":[]}
+TEXTURES = {"floor":[],"wall":[],"ceiling":[],"misc":[]}
 importTextures('textures.txt')
 player = importData('level.txt')
 ################ Game Loop ####################################################
@@ -938,6 +951,8 @@ while running:
     for event in pygame.event.get():
         if event.type==pygame.QUIT or (event.type==pygame.KEYDOWN and event.key==pygame.K_ESCAPE):
             running = False
+        if event.type==pygame.MOUSEBUTTONDOWN:
+            player.shoot()
     ################ Update ###################################################
     current_lights = 0
     clearLights()

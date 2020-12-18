@@ -26,6 +26,7 @@ struct Material {
     sampler2D diffuse;
     sampler2D specular;
     float shininess;
+    bool emissive;
 }; 
 
 #define MAX_POINT_LIGHTS 8
@@ -43,17 +44,20 @@ void main()
     vec3 fogColour = vec3(0.5);
     float fogAmount = pow(gl_FragCoord.z,32);
 
-	vec3 viewDir = normalize(viewPos - fragPos);
-	vec3 lightOutput = vec3(0.0);
+    if(!material.emissive){
+	    vec3 viewDir = normalize(viewPos - fragPos);
+	    vec3 lightOutput = vec3(0.0);
 
-	for(int i = 0; i < MAX_POINT_LIGHTS; i++){
-		if(pointLights[i].isOn){
-			lightOutput += CalculatePointLight(pointLights[i], fragNormal, fragPos, viewDir);
-		}
-	}
-
-	//Colour = vec4(fogAmount*fogColour, 1.0);
-    Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
+	    for(int i = 0; i < MAX_POINT_LIGHTS; i++){
+		    if(pointLights[i].isOn){
+			    lightOutput += CalculatePointLight(pointLights[i], fragNormal, fragPos, viewDir);
+		    }
+	    }
+        Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
+    }
+    else{
+        Colour = texture(material.diffuse, TexCoord);
+    }
 }
 
 vec3 CalculatePointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir)
