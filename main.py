@@ -403,6 +403,8 @@ class Player:
         #0: ready, 1: reloading
         self.gun_state = 0
         self.gun_t = 0
+        self.focusing = False
+        self.focus_t = 0
     
     def setCurrentSector(self,newSector):
         self.currentSector = newSector
@@ -440,7 +442,7 @@ class Player:
         
         if walking:
             self.walk(walk_direction)
-            self.walk_t += t/5
+            self.walk_t += t/2
             if self.walk_t>360:
                 self.walk_t -= 360
         else:
@@ -466,6 +468,15 @@ class Player:
             if self.gun_t >=0:
                 self.gun_t = 0
                 self.gun_state = 0
+        
+        if self.focusing:
+            self.focus_t += t/20
+            if self.focus_t >= 1:
+                self.focus_t = 1
+        else:
+            self.focus_t -= t/20
+            if self.focus_t <= 0:
+                self.focus_t = 0
     
     def walk(self,walk_direction):
         actual_direction = self.theta + walk_direction
@@ -509,9 +520,9 @@ class Player:
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
 
         #gun model transform
-        gun_local = pyrr.matrix44.create_from_translation(np.array([-1+np.sin(np.radians(self.walk_t)),1-np.sin(np.radians(self.gun_t)),-1],dtype=np.float32),dtype=np.float32)
+        gun_local = pyrr.matrix44.create_from_translation(np.array([-1+self.focus_t,1-np.sin(np.radians(self.gun_t))-self.focus_t,-1+self.focus_t],dtype=np.float32),dtype=np.float32)
         gun_position = pyrr.matrix44.create_from_translation(look_target,dtype=np.float32)
-        gun_rotate = pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta),dtype=np.float32)
+        gun_rotate = pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta+5*np.sin(np.radians(self.walk_t))),dtype=np.float32)
         gun_rotate2 = pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32)
         self.gun_model = pyrr.matrix44.multiply(gun_local,gun_rotate2)
         self.gun_model = pyrr.matrix44.multiply(self.gun_model,gun_rotate)
@@ -528,10 +539,12 @@ class Player:
         glDrawArrays(GL_TRIANGLES,0,self.gun.getVertexCount())
 
         #draw sky
+        glDisable(GL_CULL_FACE)
         TEXTURES["misc"][1].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.sky_model)
         glBindVertexArray(self.sky.getVAO())
         glDrawArrays(GL_TRIANGLES,0,self.sky.getVertexCount())
+        glEnable(GL_CULL_FACE)
 
     def shoot(self):
         if self.gun_state==0:
@@ -952,7 +965,12 @@ while running:
         if event.type==pygame.QUIT or (event.type==pygame.KEYDOWN and event.key==pygame.K_ESCAPE):
             running = False
         if event.type==pygame.MOUSEBUTTONDOWN:
-            player.shoot()
+            if event.button==1:
+                player.shoot()
+            elif event.button == 3:
+                player.focusing = True
+        if event.type == pygame.MOUSEBUTTONUP and event.button==3:
+            player.focusing = False
     ################ Update ###################################################
     current_lights = 0
     clearLights()
