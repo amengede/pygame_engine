@@ -408,6 +408,7 @@ class Player:
         self.walk_t2 = 0
         self.walk_v = 1
         self.walking = False
+        self.bullets = []
     
     def setCurrentSector(self,newSector):
         self.currentSector = newSector
@@ -484,6 +485,9 @@ class Player:
             self.focus_t -= t/20
             if self.focus_t <= 0:
                 self.focus_t = 0
+        
+        for b in self.bullets:
+            b.update()
     
     def walk(self,walk_direction):
         self.focusing = False
@@ -519,6 +523,7 @@ class Player:
 
         #get lookat
         look_direction = np.array([cos_phi*cos_theta, cos_phi*sin_theta, sin_phi],dtype=np.float32)
+        self.look_direction = 3*look_direction
         up = np.array([0,0,1],dtype=np.float32)
         camera_right = pyrr.vector3.cross(up,look_direction)
         camera_up = pyrr.vector3.cross(look_direction,camera_right)
@@ -528,17 +533,17 @@ class Player:
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
 
         #gun model transform
-        
+        self.gun_model = pyrr.matrix44.create_identity(dtype=np.float32)
         #if the player is walking spin the gun into holding position
-        self.gun_model = pyrr.matrix44.create_from_y_rotation(theta = np.radians(self.walk_t2*-90),dtype=np.float32)
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model,pyrr.matrix44.create_from_y_rotation(theta = np.radians(self.walk_t2*-90),dtype=np.float32))
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_z_rotation(theta = np.radians(self.walk_t2*-45),dtype=np.float32))
 
         #basic position of gun
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([-1,1,-1],dtype=np.float32),dtype=np.float32))
         #with walking animation
-        walk_cos = np.cos(np.radians(self.walk_t))
-        walk_sin = np.sin(np.radians(self.walk_t))
-        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([(-2+walk_cos)*self.walk_t2,(-2+walk_sin)*self.walk_t2,-self.walk_t2],dtype=np.float32),dtype=np.float32))
+        #walk_cos = np.cos(np.radians(self.walk_t))
+        #walk_sin = np.sin(np.radians(self.walk_t))
+        #self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([(-2+walk_cos)*self.walk_t2,(-2+walk_sin)*self.walk_t2,-self.walk_t2],dtype=np.float32),dtype=np.float32))
         #with mouse focus
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([self.focus_t,-self.focus_t,self.focus_t],dtype=np.float32),dtype=np.float32))
         #with gun recoil
@@ -567,11 +572,14 @@ class Player:
         glDrawArrays(GL_TRIANGLES,0,self.sky.getVertexCount())
         glEnable(GL_CULL_FACE)
 
+        for b in self.bullets:
+            b.draw()
+
     def shoot(self):
         if self.gun_state==0 and not self.walking:
             self.gun_state = 1
             self.gun_t = -90
-            #some code to shoot
+            self.bullets.append(Bullet(self.position+2*self.look_direction,self.look_direction,self.currentSector,self))
 
     def focus(self):
         if not self.walking:
@@ -972,6 +980,38 @@ class Material:
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D,self.specular)
 
+class Bullet:
+    def __init__(self,position,velocity,sector,parent):
+        self.position = position.copy()
+        self.velocity = velocity.copy()
+        self.sector = sector
+        self.graphics_model = BULLET_MODEL
+        self.parent = parent
+        self.rotation = np.array([1-2*random.random() for i in range(3)],dtype=np.float32)
+        self.angle = np.array([0,0,0],dtype=np.float32)
+    
+    def update(self):
+        #position
+        self.angle += self.rotation
+        self.position += t*self.velocity/20
+        self.sector = self.sector.newSector(self.position)
+        if self.sector==None:
+            self.destroy()
+        self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
+        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_x_rotation(theta = self.angle[0],dtype=np.float32))
+        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_y_rotation(theta = self.angle[1],dtype=np.float32))
+        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_z_rotation(theta = self.angle[2],dtype=np.float32))
+        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
+    
+    def draw(self):
+        TEXTURES["misc"][2].use()
+        glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
+        glBindVertexArray(self.graphics_model.getVAO())
+        glDrawArrays(GL_TRIANGLES,0,self.graphics_model.getVertexCount())
+    
+    def destroy(self):
+        self.parent.bullets.pop(self.parent.bullets.index(self))
+
 ################ Game Objects #################################################
 GAME_OBJECTS = []
 FLOORS = []
@@ -979,6 +1019,7 @@ CEILINGS = []
 WALLS = []
 LIGHTS = []
 TEXTURES = {"floor":[],"wall":[],"ceiling":[],"misc":[]}
+BULLET_MODEL = ObjModel("models/bullet.obj")
 importTextures('textures.txt')
 player = importData('level.txt')
 ################ Game Loop ####################################################
