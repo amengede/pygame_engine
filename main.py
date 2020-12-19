@@ -405,6 +405,9 @@ class Player:
         self.gun_t = 0
         self.focusing = False
         self.focus_t = 0
+        self.walk_t2 = 0
+        self.walk_v = 1
+        self.walking = False
     
     def setCurrentSector(self,newSector):
         self.currentSector = newSector
@@ -442,13 +445,17 @@ class Player:
         
         if walking:
             self.walk(walk_direction)
-            self.walk_t += t/2
-            if self.walk_t>360:
-                self.walk_t -= 360
+            self.walk_t += self.walk_v*t/2
+            if self.walk_t>45 or self.walk_t<-45:
+                self.walk_v *= -1
+            self.walk_t2 += t/20
+            if self.walk_t2 >= 1:
+                self.walk_t2 = 1
         else:
-            self.walk_t -= t
-            if self.walk_t<0:
-                self.walk_t = 0
+            self.walk_t = 0
+            self.walk_t2 -= t/20
+            if self.walk_t2 <= 0:
+                self.walk_t2 = 0
         
         if self.currentSector == None:
             for obj in FLOORS:
@@ -479,6 +486,7 @@ class Player:
                 self.focus_t = 0
     
     def walk(self,walk_direction):
+        self.focusing = False
         actual_direction = self.theta + walk_direction
         cos_ad = np.cos(np.radians(actual_direction),dtype=np.float32)
         sin_ad = np.sin(np.radians(actual_direction),dtype=np.float32)
@@ -520,13 +528,26 @@ class Player:
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
 
         #gun model transform
-        gun_local = pyrr.matrix44.create_from_translation(np.array([-1+self.focus_t,1-np.sin(np.radians(self.gun_t))-self.focus_t,-1+self.focus_t],dtype=np.float32),dtype=np.float32)
-        gun_position = pyrr.matrix44.create_from_translation(look_target,dtype=np.float32)
-        gun_rotate = pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta+5*np.sin(np.radians(self.walk_t))),dtype=np.float32)
-        gun_rotate2 = pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32)
-        self.gun_model = pyrr.matrix44.multiply(gun_local,gun_rotate2)
-        self.gun_model = pyrr.matrix44.multiply(self.gun_model,gun_rotate)
-        self.gun_model = pyrr.matrix44.multiply(self.gun_model,gun_position)
+        
+        #if the player is walking spin the gun into holding position
+        self.gun_model = pyrr.matrix44.create_from_y_rotation(theta = np.radians(self.walk_t2*-90),dtype=np.float32)
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_z_rotation(theta = np.radians(self.walk_t2*-45),dtype=np.float32))
+
+        #basic position of gun
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([-1,1,-1],dtype=np.float32),dtype=np.float32))
+        #with walking animation
+        walk_cos = np.cos(np.radians(self.walk_t))
+        walk_sin = np.sin(np.radians(self.walk_t))
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([(-2+walk_cos)*self.walk_t2,(-2+walk_sin)*self.walk_t2,-self.walk_t2],dtype=np.float32),dtype=np.float32))
+        #with mouse focus
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([self.focus_t,-self.focus_t,self.focus_t],dtype=np.float32),dtype=np.float32))
+        #with gun recoil
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([0,-np.sin(np.radians(self.gun_t)),0],dtype=np.float32),dtype=np.float32))
+        #rotate gun to match player's direction
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32))
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta),dtype=np.float32))
+        #move gun to player's position
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(look_target,dtype=np.float32))
 
         #sky model transform
         self.sky_model = pyrr.matrix44.create_from_translation(self.position,dtype=np.float32)
@@ -547,10 +568,14 @@ class Player:
         glEnable(GL_CULL_FACE)
 
     def shoot(self):
-        if self.gun_state==0:
+        if self.gun_state==0 and not self.walking:
             self.gun_state = 1
             self.gun_t = -90
             #some code to shoot
+
+    def focus(self):
+        if not self.walking:
+            self.focusing = True
 
 class Wall:
     def __init__(self,pos_a,pos_b,z,height,texture):
@@ -880,15 +905,15 @@ class Light:
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].isOn'),1,True)
 
             glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].position'),1,self.position)
-            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].strength'),1,1)
+            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].strength'),1,2)
 
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].constant'),1,1.0)
-            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].linear'),1,0.4)
-            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].quadratic'),1,0.2)
+            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].linear'),1,0)
+            glUniform1fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].quadratic'),1,1.0)
 
-            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].ambient'),1,0)
-            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].diffuse'),1,1.0*self.colour)
-            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].specular'),1,0.8*self.colour)
+            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].ambient'),1,0.4*self.colour)
+            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].diffuse'),1,0.4*self.colour)
+            glUniform3fv(glGetUniformLocation(shader,f'pointLights[{current_lights}].specular'),1,0.2*self.colour)
             current_lights += 1
     
     def draw(self):
@@ -968,7 +993,7 @@ while running:
             if event.button==1:
                 player.shoot()
             elif event.button == 3:
-                player.focusing = True
+                player.focus()
         if event.type == pygame.MOUSEBUTTONUP and event.button==3:
             player.focusing = False
     ################ Update ###################################################
