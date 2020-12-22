@@ -53,7 +53,8 @@ void main()
 			    lightOutput += CalculatePointLight(pointLights[i], fragNormal, fragPos, viewDir);
 		    }
 	    }
-        Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
+        //Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
+        Colour = texture(material.diffuse, TexCoord);
     }
     else{
         Colour = texture(material.diffuse, TexCoord);
