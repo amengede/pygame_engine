@@ -51,10 +51,10 @@ def importData(filename):
         Reads a file and loads all objects, returns a reference to the player
         object.
     """
+    #read data from file
     with open(filename,'r') as f:
         line = f.readline()
         while line:
-            print(line)
             beginning = line.find('(')
             tag = line[0:beginning]
             if line[0]=='#':
@@ -82,7 +82,7 @@ def importData(filename):
                 # p(x,y,direction)
                 line = line[2:-2].replace('\n','').split(',')
                 l = [float(item) for item in line]
-                player = Player(np.array([l[0],l[1],0.5],dtype=np.float32)*32,l[2])
+                player = Player(np.array([l[0],l[1],0],dtype=np.float32)*32,l[2])
                 obj = None
                 GAME_OBJECTS.append(player)
             if obj:
@@ -134,125 +134,123 @@ def importData(filename):
         for obj in CEILINGS:
             print("Made Ceiling: "+str(obj))
         """
-        #find how sectors connect
-        for obj in SECTORS:
-            #print("Checking: " + str(obj))
-            A = obj.pos_a
-            B = obj.pos_b
-            C = obj.pos_c
-            D = obj.pos_d
-            for obj2 in SECTORS:
-                #print("\t against: " + str(obj2))
-                hasA = False
-                hasB = False
-                hasC = False
-                hasD = False
-                if obj==obj2:
+    #find how sectors connect
+    for obj in SECTORS:
+        A = obj.pos_a
+        B = obj.pos_b
+        C = obj.pos_c
+        D = obj.pos_d
+        for obj2 in SECTORS:
+            #print("\t against: " + str(obj2))
+            hasA = False
+            hasB = False
+            hasC = False
+            hasD = False
+            if obj==obj2:
+                continue
+            corners = obj2.getCorners()
+            #do any corners match?
+            for corner in corners:
+                if A[0] == corner[0] and A[1] == corner[1]:
+                    #print(str(obj) + " has " + str(A) + " , " + str(obj2) + " has " + str(corner))
+                    hasA = True
                     continue
-                corners = obj2.getCorners()
-                #do any corners match?
-                for corner in corners:
-                    if A[0] == corner[0] and A[1] == corner[1]:
-                        #print(str(obj) + " has " + str(A) + " , " + str(obj2) + " has " + str(corner))
-                        hasA = True
-                        continue
-                    elif B[0] == corner[0] and B[1] == corner[1]:
-                        #print(str(obj) + " has " + str(B) + " , " + str(obj2) + " has " + str(corner))
-                        hasB = True
-                        continue
-                    elif C[0] == corner[0] and C[1] == corner[1]:
-                        #print(str(obj) + " has " + str(C) + " , " + str(obj2) + " has " + str(corner))
-                        hasC = True
-                        continue
-                    elif D[0] == corner[0] and D[1] == corner[1]:
-                        #print(str(obj) + " has " + str(D) + " , " + str(obj2) + " has " + str(corner))
-                        hasD = True
-                        continue
-                if hasA and hasB:
-                    obj.connectsAB = obj2
-                    #print(str(obj) + " connects to " + str(obj2))
+                elif B[0] == corner[0] and B[1] == corner[1]:
+                    #print(str(obj) + " has " + str(B) + " , " + str(obj2) + " has " + str(corner))
+                    hasB = True
                     continue
-                elif hasB and hasC:
-                    obj.connectsBC = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
+                elif C[0] == corner[0] and C[1] == corner[1]:
+                    #print(str(obj) + " has " + str(C) + " , " + str(obj2) + " has " + str(corner))
+                    hasC = True
                     continue
-                elif hasC and hasD:
-                    obj.connectsCD = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
+                elif D[0] == corner[0] and D[1] == corner[1]:
+                    #print(str(obj) + " has " + str(D) + " , " + str(obj2) + " has " + str(corner))
+                    hasD = True
                     continue
-                elif hasD and hasA:
-                    obj.connectsDA = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
+            if hasA and hasB:
+                obj.connectsAB = obj2
+                #print(str(obj) + " connects to " + str(obj2))
+                continue
+            elif hasB and hasC:
+                obj.connectsBC = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+            elif hasC and hasD:
+                obj.connectsCD = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+            elif hasD and hasA:
+                obj.connectsDA = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+    #find which segment the player is in
+    for obj in SECTORS:
+        if obj.inSector(player.position):
+            player.setSector(obj)
+    """
+    #find which segment each light is in
+    for obj in LIGHTS:
+        for obj2 in FLOORS:
+            if obj2.inSegment(obj.position):
+                obj.setCurrentSector(obj2)
+                obj2.addLight(obj)
+                break
+    #find which segment each enemy is in
+    for obj in ENEMIES:
+        for obj2 in FLOORS:
+            if obj2.inSegment(obj.position):
+                obj.sector = obj2
+                break
+    #add walls to sectors
+    for obj in FLOORS:
+        #print("Checking: " + str(obj))
+        A = obj.pos_a
+        B = obj.pos_b
+        C = obj.pos_c
+        D = obj.pos_d
+        for obj2 in WALLS:
+            #print("\t against: " + str(obj2))
+            hasA = False
+            hasB = False
+            hasC = False
+            hasD = False
+            corners = obj2.getCorners()
+            #do any corners match?
+            for corner in corners:
+                if A[0] == corner[0] and A[1] == corner[1]:
+                    #print(str(obj) + " has " + str(A) + " , " + str(obj2) + " has " + str(corner))
+                    hasA = True
                     continue
-        #find which segment the player is in
-        for obj in SECTORS:
-            if obj.inSegment(player.position):
-                #print("Player is on " + str(obj))
-                player.setCurrentSector(obj)
-        """
-        #find which segment each light is in
-        for obj in LIGHTS:
-            for obj2 in FLOORS:
-                if obj2.inSegment(obj.position):
-                    obj.setCurrentSector(obj2)
-                    obj2.addLight(obj)
-                    break
-        #find which segment each enemy is in
-        for obj in ENEMIES:
-            for obj2 in FLOORS:
-                if obj2.inSegment(obj.position):
-                    obj.sector = obj2
-                    break
-        #add walls to sectors
-        for obj in FLOORS:
-            #print("Checking: " + str(obj))
-            A = obj.pos_a
-            B = obj.pos_b
-            C = obj.pos_c
-            D = obj.pos_d
-            for obj2 in WALLS:
-                #print("\t against: " + str(obj2))
-                hasA = False
-                hasB = False
-                hasC = False
-                hasD = False
-                corners = obj2.getCorners()
-                #do any corners match?
-                for corner in corners:
-                    if A[0] == corner[0] and A[1] == corner[1]:
-                        #print(str(obj) + " has " + str(A) + " , " + str(obj2) + " has " + str(corner))
-                        hasA = True
-                        continue
-                    elif B[0] == corner[0] and B[1] == corner[1]:
-                        #print(str(obj) + " has " + str(B) + " , " + str(obj2) + " has " + str(corner))
-                        hasB = True
-                        continue
-                    elif C[0] == corner[0] and C[1] == corner[1]:
-                        #print(str(obj) + " has " + str(C) + " , " + str(obj2) + " has " + str(corner))
-                        hasC = True
-                        continue
-                    elif D[0] == corner[0] and D[1] == corner[1]:
-                        #print(str(obj) + " has " + str(D) + " , " + str(obj2) + " has " + str(corner))
-                        hasD = True
-                        continue
-                if hasA and hasB:
-                    obj.wallAB = obj2
-                    #print(str(obj) + " connects to " + str(obj2))
+                elif B[0] == corner[0] and B[1] == corner[1]:
+                    #print(str(obj) + " has " + str(B) + " , " + str(obj2) + " has " + str(corner))
+                    hasB = True
                     continue
-                elif hasB and hasC:
-                    obj.wallBC = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
+                elif C[0] == corner[0] and C[1] == corner[1]:
+                    #print(str(obj) + " has " + str(C) + " , " + str(obj2) + " has " + str(corner))
+                    hasC = True
                     continue
-                elif hasC and hasD:
-                    obj.wallCD = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
+                elif D[0] == corner[0] and D[1] == corner[1]:
+                    #print(str(obj) + " has " + str(D) + " , " + str(obj2) + " has " + str(corner))
+                    hasD = True
                     continue
-                elif hasD and hasA:
-                    obj.wallDA = obj2
-                    #print(str(obj)+" connects to "+str(obj2))
-                    continue
-        """
-        return player
+            if hasA and hasB:
+                obj.wallAB = obj2
+                #print(str(obj) + " connects to " + str(obj2))
+                continue
+            elif hasB and hasC:
+                obj.wallBC = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+            elif hasC and hasD:
+                obj.wallCD = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+            elif hasD and hasA:
+                obj.wallDA = obj2
+                #print(str(obj)+" connects to "+str(obj2))
+                continue
+    """
+    return player
 
 def importTextures(filename):
     with open(filename,'r') as f:
@@ -284,19 +282,19 @@ def createModels():
     #ceilings
     for f in pathlib.Path("models/ceiling").iterdir():
         if f.suffix == ".obj":
-            model = ObjModel("models/ceiling/"+f.name)
+            model = ObjModel("models/ceiling/",f.name)
             model.texture = TEXTURES["ceiling"][0]
             CEILING_MODELS.append(model)
     #walls
     for f in pathlib.Path("models/wall").iterdir():
         if f.suffix == ".obj":
-            model = ObjModel("models/wall/"+f.name)
+            model = ObjModel("models/wall/",f.name)
             model.texture = TEXTURES["wall"][0]
             WALL_MODELS.append(model)
     #floors
     for f in pathlib.Path("models/floor").iterdir():
         if f.suffix == ".obj":
-            model = ObjModel("models/floor/"+f.name)
+            model = ObjModel("models/floor/",f.name)
             model.texture = TEXTURES["floor"][0]
             FLOOR_MODELS.append(model)
 
@@ -335,49 +333,142 @@ def addLights(sector):
 ################ Classes ######################################################
 
 class ObjModel:
-    def __init__(self,filepath):
+    def __init__(self,folderpath,filename):
+        v = []
+        vt = []
+        vn = []
+        self.vertices = []
 
-        attributeMap = {'V':0,'N':1,'T':2}
-        datatypeMap = {'F':GL_FLOAT}
+        #open the obj file and read the data
+        with open(f"{folderpath}/{filename}",'r') as f:
+            line = f.readline()
+            while line:
+                firstSpace = line.find(" ")
+                flag = line[0:firstSpace]
+                if flag=="mtllib":
+                    #declaration of material file
+                    materialFile = line.replace("mtllib ","")
+                elif flag=="v":
+                    #vertex
+                    line = line.replace("v ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    v.append(l)
+                elif flag=="vt":
+                    #texture coordinate
+                    line = line.replace("vt ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    vt.append(l)
+                elif flag=="vn":
+                    #normal
+                    line = line.replace("vn ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    vn.append(l)
+                elif flag=="f":
+                    #face, four vertices in v/vt/vn form
+                    line = line.replace("f ","")
+                    line = line.replace("\n","")
+                    line = line.split(" ")
+                    theseVertices = []
+                    theseTextures = []
+                    theseNormals = []
+                    for vertex in line:
+                        l = vertex.split("/")
+                        position = int(l[0]) - 1
+                        theseVertices.append(v[position])
+                        texture = int(l[1]) - 1
+                        theseTextures.append(vt[texture])
+                        normal = int(l[2]) - 1
+                        theseNormals.append(vn[normal])
+                    # obj file uses triangle fan format for each face individually.
+                    # unpack each face
+                    triangles_in_face = len(line) - 2
 
-        attributes = []
+                    vertex_order = []
+                    for i in range(triangles_in_face):
+                        vertex_order.append(0)
+                        vertex_order.append(i+1)
+                        vertex_order.append(i+2)
+                    
+                    for i in vertex_order:
+                        for x in theseVertices[i]:
+                            self.vertices.append(x)
+                        for x in theseNormals[i]:
+                            self.vertices.append(x)
+                        for x in theseTextures[i]:
+                            self.vertices.append(x)
+                    
+                line = f.readline()
+        self.vertices = np.array(self.vertices,dtype=np.float32)
 
-        scene = pwf.Wavefront(filepath)
-        for name, material in scene.materials.items():
-            vertex_format = material.vertex_format.split("_")
-            vertices = material.vertices
-            #print(vertex_format)
-            #print(vertices)
+        #vertex array object, all that stuff
+        self.vao = glGenVertexArrays(1)
+        glBindVertexArray(self.vao)
 
-        stride = 0
-        for item in vertex_format:
-            attributeLocation = attributeMap[item[0]]
-            attributeStart = stride
-            attributeLength = int(item[1])
-            attributeDataType = datatypeMap[item[2]]
-            stride += attributeLength
-            attributes.append((attributeLocation,attributeLength,attributeDataType,attributeStart*4))
-        
-        self._VAO = glGenVertexArrays(1)
-        glBindVertexArray(self._VAO)
+        self.vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER,self.vbo)
+        glBufferData(GL_ARRAY_BUFFER,self.vertices.nbytes,self.vertices,GL_STATIC_DRAW)
+        self.vertexCount = int(len(self.vertices)/8)
 
-        vertices = np.array(vertices,dtype=np.float32)
-
-        self._VBO = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER,self._VBO)
-        glBufferData(GL_ARRAY_BUFFER,vertices.nbytes,vertices,GL_STATIC_DRAW)
-        self._vertexCount = int(len(vertices)/stride)
-
-        for a in attributes:
-            glEnableVertexAttribArray(a[0])
-            glVertexAttribPointer(a[0],a[1],a[2],GL_FALSE,vertices.itemsize*stride,ctypes.c_void_p(a[3]))
-        
+        #position attribute
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(0))
+        #normal attribute
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(12))
+        #texture attribute
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(24))
         self.texture = None
-
+        """
+        #open the mtl file and read the data
+        with open(f"{folderpath}/{materialFile}",'r') as f:
+            line = f.readline()
+            while line:
+                firstSpace = line.find(" ")
+                flag = line[0:firstSpace]
+                if flag=="mtllib":
+                    #declaration of material file
+                    materialFile = line.replace("mtllib ","")
+                elif flag=="v":
+                    #vertex
+                    line = line.replace("v ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    v.append(l)
+                elif flag=="vt":
+                    #texture coordinate
+                    line = line.replace("vt ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    vt.append(l)
+                elif flag=="vn":
+                    #normal
+                    line = line.replace("vn ","")
+                    line = line.split(" ")
+                    l = [float(x) for x in line]
+                    vn.append(l)
+                elif flag=="f":
+                    #face, four vertices in v/vt/vn form
+                    line = line.replace("f ","")
+                    line = line.split(" ")
+                    for vertex in line:
+                        l = vertex.split("/")
+                        position = int(l[0]) - 1
+                        texture = int(l[1]) - 1
+                        normal = int(l[2]) - 1
+                        self.vertices.append(v[position])
+                        self.vertices.append(vn[normal])
+                        self.vertices.append(vt[texture])
+                line = f.readline()
+        self.vertices = np.array(self.vertices,dtype=np.float32)
+        """
     def draw(self):
         self.texture.use()
-        glBindVertexArray(self._VAO)
-        glDrawArrays(GL_TRIANGLE_FAN,0,self._vertexCount)
+        glBindVertexArray(self.vao)
+        glDrawArrays(GL_TRIANGLES,0,self.vertexCount)
 
 class AnimatedObjModel:
     def __init__(self,folderpath,modelName):
@@ -448,18 +539,97 @@ class AnimatedObjModel:
     def getVertexCount(self):
         return self._vertexCount
 
-class Player:
-    def __init__(self,position,direction):
+class physicsObject:
+    def __init__(self,position,size,velocity=np.array([0,0,0],dtype=np.float32)):
         self.position = position
+        self.radius = size[0]
+        self.height = size[1]
+        self.velocity = velocity
+        self.sector = None
+        self.lastSector = None
+    
+    def setSector(self,sector):
+        self.sector = sector
+    
+    def recalculateSector(self):
+        for sector in SECTORS:
+            if sector.inSector(self.position):
+                return sector
+        return None
+    
+    def update(self):
+        #failsafe: if the object is not in a sector, attempt to recalculate
+        if not self.sector:
+            self.sector = self.recalculateSector()
+            if not self.sector and self.lastSector:
+                self.sector = self.lastSector.newSector(self.position)
+                if not self.sector:
+                    self.sector = self.lastSector
+        
+        if self.sector:
+            # check collisions with walls, floors and ceilings
+            # return whether something was hit
+            hitSomething = False
+            #check each component of the object's velocity, if there's a collision then don't move in that direction
+            temp = np.array([0,0,0],dtype=np.float32)
+
+            check = np.array([self.velocity[0],0,0],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + self.radius*check):
+                hitSomething = True
+            else:
+                temp += check
+            
+            check = np.array([0,self.velocity[1],0],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + self.radius*check):
+                hitSomething = True
+            else:
+                temp += check
+            
+            if self.velocity[2] > 0:
+                check = self.position + np.array([0,0,self.velocity[2] + self.height],dtype=np.float32)
+                if self.sector.checkCollisions(check):
+                    self.velocity[2] *= -0.5
+                    hitSomething = True
+
+            elif self.velocity[2] < 0:
+                check = self.position + np.array([0,0,self.velocity[2]],dtype=np.float32)
+                if self.sector.checkCollisions(check):
+                    #if the object is going slowly enough we can conclude that they've hit the ground
+                    if self.velocity[2]>-0.5:
+                        self.velocity[2] = 0
+                        self.position[2] = self.sector.position[2]
+                    else:
+                        #bounce
+                        self.velocity[2] *= -0.5
+                        hitSomething = True
+            
+            self.position += temp
+            #get new sector based on new position
+            self.sector = self.sector.newSector(self.position)
+            if self.lastSector != self.sector:
+                self.lastSector = self.sector
+
+            self.velocity *= 0.5
+
+            return hitSomething
+
+class Player(physicsObject):
+    def __init__(self,position,direction):
+        super().__init__(position,[16,16])
         self.theta = direction
         self.phi = 0
         pygame.mouse.set_pos(SCREEN_WIDTH/2,SCREEN_HEIGHT/2)
-        self.speed = 1
-        self.height = 16
-        self.currentSector = None
-        self.lastSector = None
-        self.gun = ObjModel("models/rifle.obj")
-        self.sky = ObjModel("models/skybox.obj")
+        self.speed = 1.2
+        self.height_vec = np.array([0,0,self.height],dtype=np.float32)
+
+        self.gun = ObjModel("models/","rifle.obj")
+        self.gun.texture = TEXTURES["misc"][0]
+
+        self.sky = ObjModel("models/","skybox.obj")
+        self.sky.texture = TEXTURES["misc"][1]
+
+        print(self.sky.vertexCount)
+
         self.walk_t = 0
         #0: ready, 1: reloading
         self.gun_state = 0
@@ -467,133 +637,62 @@ class Player:
         self.focusing = False
         self.focus_t = 0
         self.walk_t2 = 0
-        self.walk_v = 1
         self.walking = False
         self.bullets = []
-    
-    def setCurrentSector(self,newSector):
-        self.currentSector = newSector
-        #print("Player is on " + str(self.currentSector))
+        self.up = np.array([0,0,1],dtype=np.float32)
+        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,350,dtype=np.float32)
+        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
 
-    def update(self):
-        #take inputs
+    def handle_keys(self):
         keystate = pygame.key.get_pressed()
-        walk_direction = 0
+        self.walk_direction = 0
         self.walking = False
 
-        #mouse
+        if keystate[pygame.K_a]:
+            self.walking = True
+            self.walk_direction = 90
+        if keystate[pygame.K_d]:
+            self.walk_direction = -90
+            self.walking = True
+        if keystate[pygame.K_w]:
+            self.walk_direction = 0
+            self.walking = True
+        if keystate[pygame.K_s]:
+            self.walk_direction = 180
+            self.walking = True
+
+    def handle_mouse(self):
         new_pos = pygame.mouse.get_pos()
         pygame.mouse.set_pos(SCREEN_WIDTH/2,SCREEN_HEIGHT/2)
         self.theta -= t*(new_pos[0] - SCREEN_WIDTH/2)/15
         self.theta = self.theta%360
         self.phi -= t*(new_pos[1] - SCREEN_HEIGHT/2)/15
         self.phi = min(max(self.phi,-90),90)
-
-        self.look()
-
-        #keys
-        if keystate[pygame.K_a]:
-            self.walking = True
-            walk_direction = 90
-        if keystate[pygame.K_d]:
-            walk_direction = -90
-            self.walking = True
-        if keystate[pygame.K_w]:
-            walk_direction = 0
-            self.walking = True
-        if keystate[pygame.K_s]:
-            walk_direction = 180
-            self.walking = True
+    
+    def walk(self):
+        #physics stuff
+        actual_direction = self.theta + self.walk_direction
+        cos_ad = np.cos(np.radians(actual_direction),dtype=np.float32)
+        sin_ad = np.sin(np.radians(actual_direction),dtype=np.float32)
+        self.velocity = np.array([cos_ad,sin_ad,0],dtype=np.float32)*t*self.speed/20
         
-        if self.walking:
-            self.walk(walk_direction)
-            self.walk_t += self.walk_v*t/2
-            if self.walk_t>45 or self.walk_t<-45:
-                self.walk_v *= -1
-            self.walk_t2 += t/20
-            if self.walk_t2 >= 1:
-                self.walk_t2 = 1
-        else:
-            self.walk_t = 0
-            self.walk_t2 -= t/20
-            if self.walk_t2 <= 0:
-                self.walk_t2 = 0
-        
-        if self.currentSector == None:
-            for obj in SECTORS:
-                if obj.inSegment(self.position):
-                    self.currentSector = obj
-                    break
-        
-        if self.currentSector != None:
-            addLights(self.currentSector)
+        #animation stuff
+        """
+        self.walk_t += self.speed*t/2w
+        if self.walk_t>45 or self.walk_t<-45:
+            self.walk_v *= -1
+        self.walk_t2 += t/20
+        if self.walk_t2 >= 1:
+            self.walk_t2 = 1
+        """
 
-        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,350,dtype=np.float32)
-        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
-        glUniform3fv(glGetUniformLocation(shader,"viewPos"),1,self.position)
-
+    def updateGun(self):
         if self.gun_state==1:
             self.gun_t += t/2
             if self.gun_t >=0:
                 self.gun_t = 0
                 self.gun_state = 0
         
-        if self.focusing:
-            self.focus_t += t/20
-            if self.focus_t >= 1:
-                self.focus_t = 1
-        else:
-            self.focus_t -= t/20
-            if self.focus_t <= 0:
-                self.focus_t = 0
-        
-        for b in self.bullets:
-            b.update()
-    
-    def walk(self,walk_direction):
-        self.focusing = False
-        actual_direction = self.theta + walk_direction
-        cos_ad = np.cos(np.radians(actual_direction),dtype=np.float32)
-        sin_ad = np.sin(np.radians(actual_direction),dtype=np.float32)
-
-        temp = np.array([0,0,0],dtype=np.float32)
-        #walltoCheck = self.currentSector.checkCollisions(self.position+8*np.array([cos_ad,0,0],dtype=np.float32))
-        #if not walltoCheck or (walltoCheck.position[2]+walltoCheck.height)<(self.position[2]-self.height+4) or (walltoCheck.position[2]>self.position[2]):
-        temp += self.speed*t*np.array([cos_ad,sin_ad,0],dtype=np.float32)/20
-        
-        #walltoCheck = self.currentSector.checkCollisions(self.position+8*np.array([0,sin_ad,0],dtype=np.float32))
-        #if not walltoCheck or (walltoCheck.position[2]+walltoCheck.height)<(self.position[2]-self.height+4) or (walltoCheck.position[2]>self.position[2]):
-        #    temp += self.speed*t*np.array([0,sin_ad,0],dtype=np.float32)/20
-
-        self.position += temp
-        """
-        if self.currentSector:
-            self.currentSector = self.currentSector.newSector(self.position)
-            if self.currentSector:
-                self.position[2] = self.currentSector.z + self.height
-        
-        if self.currentSector != self.lastSector:
-            #print("Player is on " + str(self.currentSector))
-            self.lastSector = self.currentSector
-            """
-    
-    def look(self):
-        cos_phi = np.cos(np.radians(self.phi),dtype=np.float32)
-        sin_phi = np.sin(np.radians(self.phi),dtype=np.float32)
-        cos_theta = np.cos(np.radians(self.theta),dtype=np.float32)
-        sin_theta = np.sin(np.radians(self.theta),dtype=np.float32)
-
-        #get lookat
-        look_direction = np.array([cos_phi*cos_theta, cos_phi*sin_theta, sin_phi],dtype=np.float32)
-        self.look_direction = 3*look_direction
-        up = np.array([0,0,1],dtype=np.float32)
-        camera_right = pyrr.vector3.cross(up,look_direction)
-        camera_up = pyrr.vector3.cross(look_direction,camera_right)
-        look_target = self.position + look_direction
-
-        lookat_matrix = pyrr.matrix44.create_look_at(self.position,look_target, camera_up, dtype=np.float32)
-        glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
-
         #gun model transform
         self.gun_model = pyrr.matrix44.create_identity(dtype=np.float32)
         #if the player is walking spin the gun into holding position
@@ -603,9 +702,9 @@ class Player:
         #basic position of gun
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([-1,1,-1],dtype=np.float32),dtype=np.float32))
         #with walking animation
-        #walk_cos = np.cos(np.radians(self.walk_t))
-        #walk_sin = np.sin(np.radians(self.walk_t))
-        #self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([(-2+walk_cos)*self.walk_t2,(-2+walk_sin)*self.walk_t2,-self.walk_t2],dtype=np.float32),dtype=np.float32))
+        walk_cos = np.cos(np.radians(self.walk_t))
+        walk_sin = np.sin(np.radians(self.walk_t))
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([(-2+walk_cos)*self.walk_t2,(-2+walk_sin)*self.walk_t2,-self.walk_t2],dtype=np.float32),dtype=np.float32))
         #with mouse focus
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(np.array([self.focus_t,-self.focus_t,self.focus_t],dtype=np.float32),dtype=np.float32))
         #with gun recoil
@@ -614,28 +713,89 @@ class Player:
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_x_rotation(theta = np.radians(self.phi),dtype=np.float32))
         self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_z_rotation(theta = np.radians(270-self.theta),dtype=np.float32))
         #move gun to player's position
-        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(look_target,dtype=np.float32))
+        self.gun_model = pyrr.matrix44.multiply(self.gun_model, pyrr.matrix44.create_from_translation(self.look_target,dtype=np.float32))
 
+    def updateSky(self):
         #sky model transform
         self.sky_model = pyrr.matrix44.create_from_translation(self.position,dtype=np.float32)
 
-    def draw(self):
-        pass
+    def idle(self):
+        self.walk_t = 0
+        self.walk_t2 -= t/20
+        if self.walk_t2 <= 0:
+            self.walk_t2 = 0
+        
+        if self.focusing:
+            self.focus_t += t/20
+            if self.focus_t >= 1:
+                self.focus_t = 1
+        else:
+            self.focus_t -= t/20
+            if self.focus_t <= 0:
+                self.focus_t = 0
+
+    def update(self):
+        #keys
+        self.handle_keys()
+
+        #mouse
+        self.handle_mouse()
+        self.look()
+
+        if self.walking:
+            self.walk()
+        else:
+            self.idle()
+        
+        #physics behaviour
+        super().update()
+        
+        #lighting
         """
+        if self.currentSector != None:
+            addLights(self.currentSector)
+        """
+        
+        #send camera position to shader
+        glUniform3fv(glGetUniformLocation(shader,"viewPos"),1,self.position)
+
+        self.updateGun()
+        self.updateSky()
+        
+        #update bullets
+        for b in self.bullets:
+            b.update()
+    
+    def look(self):
+        self.cos_phi = np.cos(np.radians(self.phi),dtype=np.float32)
+        self.sin_phi = np.sin(np.radians(self.phi),dtype=np.float32)
+        self.cos_theta = np.cos(np.radians(self.theta),dtype=np.float32)
+        self.sin_theta = np.sin(np.radians(self.theta),dtype=np.float32)
+
+        #get lookat
+        self.look_direction = np.array([self.cos_phi*self.cos_theta, self.cos_phi*self.sin_theta, self.sin_phi],dtype=np.float32)
+        self.look_direction *= 3
+        
+        camera_right = pyrr.vector3.cross(self.up,self.look_direction)
+        camera_up = pyrr.vector3.cross(self.look_direction,camera_right)
+        self.look_target = self.position + self.height_vec + self.look_direction
+
+        lookat_matrix = pyrr.matrix44.create_look_at(self.position + np.array([0,0,self.height],dtype=np.float32),self.look_target, camera_up, dtype=np.float32)
+        glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
+        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,350,dtype=np.float32)
+        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
+
+    def draw(self):
         #draw gun
-        TEXTURES["misc"][0].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.gun_model)
-        glBindVertexArray(self.gun._VAO
-        glDrawArrays(GL_TRIANGLES,0,self.gun._vertexCount())
+        self.gun.draw()
 
         #draw sky
-        glDisable(GL_CULL_FACE)
-        TEXTURES["misc"][1].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.sky_model)
-        glBindVertexArray(self.sky.getVAO())
-        glDrawArrays(GL_TRIANGLES,0,self.sky.getVertexCount())
-        glEnable(GL_CULL_FACE)
+        self.sky.draw()
 
+        """
+        #draw bullets
         for b in self.bullets:
             b.draw()
         """
@@ -644,7 +804,7 @@ class Player:
         if self.gun_state==0 and not self.walking:
             self.gun_state = 1
             self.gun_t = -90
-            self.bullets.append(Bullet(self.position+2*self.look_direction,self.look_direction,self.currentSector,self))
+            self.bullets.append(Bullet(self.position+2*self.look_direction,self.look_direction,self.sector,self))
 
     def focus(self):
         if not self.walking:
@@ -656,6 +816,9 @@ class Sector:
         self.length = length_width_height[0]
         self.width = length_width_height[1]
         self.height = length_width_height[2]
+        self.length_grid = int(self.length)//32
+        self.width_grid = int(self.width)//32
+        self.height_grid = int(self.height)//32
         #positions
         self.position = top_left
         self.model = pyrr.matrix44.create_from_translation(self.position,dtype=np.float32)
@@ -666,44 +829,48 @@ class Sector:
         self.top_position = top_left + np.array([0,0,length_width_height[2]],dtype=np.float32)
 
         #models
+        self.model = pyrr.matrix44.create_identity(dtype=np.float32)
         if bottom_wall < 0:
             self.bottom_wall = None
+            self.has_bottom_wall = False
         else:
             self.bottom_wall = WALL_MODELS[bottom_wall]
-            self.bottom_wall_model_transform = pyrr.matrix44.create_from_translation(self.pos_a)
+            self.has_bottom_wall = True
         
         if right_wall < 0:
             self.right_wall = None
+            self.has_right_wall = False
         else:
             self.right_wall = WALL_MODELS[right_wall]
-            self.right_wall_model_transform = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-90)),
-                                                                        pyrr.matrix44.create_from_translation(self.pos_b))
+            self.has_right_wall = True
         
         if top_wall < 0:
             self.top_wall = None
+            self.has_top_wall = False
         else:
             self.top_wall = WALL_MODELS[top_wall]
-            self.top_wall_model_transform = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-180)),
-                                                                        pyrr.matrix44.create_from_translation(self.pos_c))
+            self.has_top_wall = True
         
         if left_wall < 0:
             self.left_wall = None
+            self.has_left_wall = False
         else:
             self.left_wall = WALL_MODELS[left_wall]
-            self.left_wall_model_transform = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-270)),
-                                                                        pyrr.matrix44.create_from_translation(self.pos_d))
+            self.has_left_wall = True
         
         if floor < 0:
             self.floor = None
+            self.has_floor = False
         else:
             self.floor = FLOOR_MODELS[floor]
-            self.floor_model_transform = pyrr.matrix44.create_from_translation(self.position)
+            self.has_floor = True
         
         if ceiling < 0:
             self.ceiling = None
+            self.has_ceiling = False
         else:
             self.ceiling = CEILING_MODELS[ceiling]
-            self.ceiling_model_transform = pyrr.matrix44.create_from_translation(self.top_position)
+            self.has_ceiling = True
         
         #connection info
         self.corners = [self.pos_a,self.pos_b,self.pos_c,self.pos_d]
@@ -734,7 +901,7 @@ class Sector:
     def addLight(self,light):
         self.lights.append(light)
 
-    def inSegment(self,pos):
+    def inSector(self,pos):
         #check boundary AB
         if pos[1]<self.pos_a[1]:
             return False
@@ -777,65 +944,88 @@ class Sector:
         return self
 
     def checkCollisions(self,pos):
-        if self.wallAB:
+        if self.has_bottom_wall:
             #check boundary AB
             if pos[1]<self.pos_a[1]:
-                return self.wallAB
+                return True
         
-        if self.wallBC:
+        if self.has_right_wall:
             #check boundary BC
             if pos[0]>self.pos_b[0]:
-                return self.wallBC
+                return True
         
-        if self.wallCD:
+        if self.has_top_wall:
             #check boundary CD
             if pos[1]>self.pos_c[1]:
-                return self.wallCD
+                return True
         
-        if self.wallDA:
+        if self.has_left_wall:
             #check boundary DA
-            if pos[0]<self.pos_d[0]:
-                return self.wallDA
+            if pos[0]<=self.pos_d[0]:
+                return True
         
-        return None
+        return False
 
     def update(self):
         pass
 
     def draw(self):
-        glDisable(GL_CULL_FACE)
         #floor
-        if self.floor:
-            for x in range(int(self.length)//32):
-                for y in range(int(self.width)//32):
-                    pos = np.array([32*x,-32*y,self.position[2]],dtype=np.float32)
-                    self.floor_model_transform = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
-                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.floor_model_transform)
+        if self.has_floor:
+            for x in range(self.length_grid):
+                for y in range(self.width_grid):
+                    pos = np.array([32*x,-32*y,0],dtype=np.float32)
+                    self.model = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
                     self.floor.draw()
         #bottom wall
-        if self.bottom_wall:
-            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.bottom_wall_model_transform)
-            self.bottom_wall.draw()
+        if self.has_bottom_wall:
+            #start at position a and expand to right
+            for x in range(self.length_grid):
+                for z in range(self.height_grid):
+                    pos = np.array([32*x,0,32*z],dtype=np.float32)
+                    self.model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(0)),
+                                                            pyrr.matrix44.create_from_translation(self.pos_a + pos))
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+                    self.bottom_wall.draw()
         #right wall
-        if self.right_wall:
-            for y in range(int(self.width)//32):
-                pos = np.array([0,32*y,self.position[2]],dtype=np.float32)
-                self.right_wall_model_transform = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-90)),
-                                                                        pyrr.matrix44.create_from_translation(self.pos_b + pos))
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.right_wall_model_transform)
-                self.right_wall.draw()
+        if self.has_right_wall:
+            #start at position b and expand up
+            for y in range(self.width_grid):
+                for z in range(self.height_grid):
+                    pos = np.array([0,32*y,32*z],dtype=np.float32)
+                    self.model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-90)),
+                                                            pyrr.matrix44.create_from_translation(self.pos_b + pos))
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+                    self.right_wall.draw()
         #top wall
-        if self.top_wall:
-            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.top_wall_model_transform)
-            self.top_wall.draw()
+        if self.has_top_wall:
+            #start at position c and expand to left
+            for x in range(self.length_grid):
+                for z in range(self.height_grid):
+                    pos = np.array([-32*x,0,32*z],dtype=np.float32)
+                    self.model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-180)),
+                                                            pyrr.matrix44.create_from_translation(self.pos_c + pos))
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+                    self.top_wall.draw()
         #left wall
-        if self.left_wall:
-            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.left_wall_model_transform)
-            self.left_wall.draw()
+        if self.has_left_wall:
+            #start at position d and expand down
+            for y in range(self.width_grid):
+                for z in range(self.height_grid):
+                    pos = np.array([0,-32*y,32*z],dtype=np.float32)
+                    self.model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-270)),
+                                                            pyrr.matrix44.create_from_translation(self.pos_d + pos))
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+                    self.left_wall.draw()
         #ceiling
-        if self.ceiling:
-            glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.ceiling_model_transform)
-            self.ceiling.draw()
+        if self.has_ceiling:
+            for x in range(self.length_grid):
+                for y in range(self.width_grid):
+                    pos = np.array([32*x,-32*y,0],dtype=np.float32)
+                    self.model = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
+                    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+                    self.ceiling.draw()
 
     def __str__(self):
         return self.tag
@@ -1102,9 +1292,9 @@ FLOOR_MODELS = []
 LIGHTS = []
 ENEMIES = []
 TEXTURES = {"floor":[],"wall":[],"ceiling":[],"misc":[],"enemies":[]}
-BULLET_MODEL = ObjModel("models/bullet.obj")
-GHOST_MODEL = ObjModel("models/ghastly.obj")
-BOUNCE_MODEL = AnimatedObjModel("models/wobble","wobble")
+BULLET_MODEL = ObjModel("models/","bullet.obj")
+GHOST_MODEL = ObjModel("models/","ghastly.obj")
+#BOUNCE_MODEL = AnimatedObjModel("models/wobble","wobble")
 #print("Importing textures")
 importTextures('textures.txt')
 #print("Creating models")
