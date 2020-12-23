@@ -80,29 +80,23 @@ def importData(filename):
             elif line[0]=='p':
                 #player
                 # p(x,y,direction)
-                line = line[2:-2].replace('\n','').split(',')
+                line = line[beginning+1:-2].replace('\n','').split(',')
                 l = [float(item) for item in line]
                 player = Player(np.array([l[0],l[1],0],dtype=np.float32)*32,l[2])
                 obj = None
                 GAME_OBJECTS.append(player)
+            elif line[0]=='g':
+                #ghost
+                # g(x,y,z)
+                line = line[beginning+1:-2].replace('\n','').split(',')
+                l = [float(item)*32 for item in line]
+                obj = Ghost(np.array([l[0],l[1],l[2]],dtype=np.float32))
+                GAME_OBJECTS.append(obj)
+                ENEMIES.append(obj)
             if obj:
                 obj.tag = tag
             line = f.readline()
         """
-            elif line[0]=='c':
-                #ceiling
-                # c(a_x,a_y,b_x,b_y,c_x,c_y,d_x,d_y,z,tex)
-                line = line[beginning+1:-2].replace('\n','').split(',')
-                l = [int(item) for item in line]
-                pos_a = np.array([l[0],l[1],l[8]],dtype=np.float32)
-                pos_b = np.array([l[2],l[3],l[8]],dtype=np.float32)
-                pos_c = np.array([l[4],l[5],l[8]],dtype=np.float32)
-                pos_d = np.array([l[6],l[7],l[8]],dtype=np.float32)
-                z = l[8]
-                tex = TEXTURES["ceiling"][l[9]]
-                obj = Ceiling(pos_a,pos_b,pos_c,pos_d,z,tex)
-                GAME_OBJECTS.append(obj)
-                CEILINGS.append(obj)
             elif line[0]=='l':
                 #light
                 # l(x,y,z,r,g,b)
@@ -119,14 +113,7 @@ def importData(filename):
                 l = [int(item) for item in line]
                 obj = AnimationTester(np.array([l[0],l[1],l[2]],dtype=np.float32))
                 GAME_OBJECTS.append(obj)
-            elif line[0]=='g':
-                #ghost
-                # g(x,y,z)
-                line = line[2:-2].replace('\n','').split(',')
-                l = [int(item) for item in line]
-                obj = Ghost(np.array([l[0],l[1],l[2]],dtype=np.float32))
-                GAME_OBJECTS.append(obj)
-                ENEMIES.append(obj)
+            
             """
         """
         for obj in FLOORS:
@@ -184,9 +171,10 @@ def importData(filename):
                 #print(str(obj)+" connects to "+str(obj2))
                 continue
     #find which segment the player is in
-    for obj in SECTORS:
-        if obj.inSector(player.position):
-            player.setSector(obj)
+    player.setSector(player.recalculateSector())
+    #find which segment each enemy is in
+    for obj in ENEMIES:
+        obj.sector = obj.recalculateSector()
     """
     #find which segment each light is in
     for obj in LIGHTS:
@@ -195,12 +183,7 @@ def importData(filename):
                 obj.setCurrentSector(obj2)
                 obj2.addLight(obj)
                 break
-    #find which segment each enemy is in
-    for obj in ENEMIES:
-        for obj2 in FLOORS:
-            if obj2.inSegment(obj.position):
-                obj.sector = obj2
-                break
+    
     #add walls to sectors
     for obj in FLOORS:
         #print("Checking: " + str(obj))
@@ -628,8 +611,6 @@ class Player(physicsObject):
         self.sky = ObjModel("models/","skybox.obj")
         self.sky.texture = TEXTURES["misc"][1]
 
-        print(self.sky.vertexCount)
-
         self.walk_t = 0
         #0: ready, 1: reloading
         self.gun_state = 0
@@ -780,7 +761,7 @@ class Player(physicsObject):
         camera_up = pyrr.vector3.cross(self.look_direction,camera_right)
         self.look_target = self.position + self.height_vec + self.look_direction
 
-        lookat_matrix = pyrr.matrix44.create_look_at(self.position + np.array([0,0,self.height],dtype=np.float32),self.look_target, camera_up, dtype=np.float32)
+        lookat_matrix = pyrr.matrix44.create_look_at(self.position + self.height_vec,self.look_target, camera_up, dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
         projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,350,dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
@@ -794,17 +775,15 @@ class Player(physicsObject):
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.sky_model)
         self.sky.draw()
 
-        """
         #draw bullets
         for b in self.bullets:
             b.draw()
-        """
 
     def shoot(self):
         if self.gun_state==0 and not self.walking:
             self.gun_state = 1
             self.gun_t = -90
-            self.bullets.append(Bullet(self.position+2*self.look_direction,self.look_direction,self.sector,self))
+            self.bullets.append(Bullet(self.position+self.height_vec+2*self.look_direction,self.look_direction,self.sector,self))
 
     def focus(self):
         if not self.walking:
@@ -961,7 +940,15 @@ class Sector:
         
         if self.has_left_wall:
             #check boundary DA
-            if pos[0]<=self.pos_d[0]:
+            if pos[0]<self.pos_d[0]:
+                return True
+        
+        if self.has_floor:
+            if pos[2]<self.position[2]:
+                return True
+        
+        if self.has_ceiling:
+            if pos[2]>self.top_position[2]:
                 return True
         
         return False
@@ -1119,10 +1106,9 @@ class Material:
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D,self.specular)
 
-class Bullet:
+class Bullet(physicsObject):
     def __init__(self,position,velocity,sector,parent):
-        self.position = position.copy()
-        self.velocity = velocity.copy()
+        super().__init__(position.copy(),[1,1],velocity.copy())
         self.sector = sector
         self.graphics_model = BULLET_MODEL
         self.parent = parent
@@ -1144,10 +1130,8 @@ class Bullet:
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
     
     def draw(self):
-        TEXTURES["misc"][2].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
-        glBindVertexArray(self.graphics_model.getVAO())
-        glDrawArrays(GL_TRIANGLES,0,self.graphics_model.getVertexCount())
+        self.graphics_model.draw()
     
     def destroy(self):
         self.parent.bullets.pop(self.parent.bullets.index(self))
@@ -1176,9 +1160,9 @@ class AnimationTester:
         glBindVertexArray(self.graphics_model.getVAO(self.animation_frame))
         glDrawArrays(GL_TRIANGLES,0,self.graphics_model.getVertexCount())
 
-class Ghost:
+class Ghost(physicsObject):
     def __init__(self,position):
-        self.position = position
+        super().__init__(position,[8,8])
         self.graphics_model = GHOST_MODEL
         self.health = 12
         self.direction = pyrr.vector.normalise(np.array([1-2*random.random() for i in range(3)],dtype=np.float32))
@@ -1190,98 +1174,71 @@ class Ghost:
         self.state = 0
     
     def update(self):
-        test_x = np.array([self.direction[0],0,0],dtype=np.float32)
-        walltoCheck = self.sector.checkCollisions(self.position+test_x)
-        if walltoCheck:
-            self.direction[0] *= -1
-        test_y = np.array([0,self.direction[1],0],dtype=np.float32)
-        walltoCheck = self.sector.checkCollisions(self.position+test_y)
-        if walltoCheck:
-            self.direction[1] *= -1
-        if self.position[2] < 4 or self.position[1] > 36:
-            self.direction[2] *= -1
-        self.position += t/800*self.direction
-
+        
         if self.state==0:
             #wander
-            self.position += t*self.speed/40*self.direction
+            self.speed = 0.5
+            self.velocity = t*self.speed/20*self.direction
+            hitSomething = super().update()
+            #if we hit something, randomise the direction again
+            if hitSomething:
+                self.direction = pyrr.vector.normalise(np.array([1-2*random.random() for i in range(3)],dtype=np.float32))
             
-            toPlayer = player.position - self.position
+            #go into attack mode if we're close enough to player
+            toPlayer = (player.position + player.height_vec/2) - self.position
             distance = pyrr.vector.length(toPlayer)
-            if distance <= 32:
+            if distance <= 128:
                 self.direction = pyrr.vector.normalise(toPlayer)
                 self.state = 1
+            #to make sure the rest of the code doesn't update
+            self.updateModel()
+            return
 
         elif self.state==1:
             #chase
-            self.position += t*self.speed/20*self.direction
-            #check which sector we're in, if possible
-            if self.sector != None:
-                self.sector = self.sector.newSector(self.position)
-            else:
-                for obj in FLOORS:
-                    if obj.inSegment(self.position):
-                        self.sector = obj
-                        break
+            self.speed = 1
+            self.velocity = t*self.speed/20*self.direction
+            hitSomething = super().update()
             
-            #three cases for missing player, either hitting a wall or a ceiling or floor
-            #if we miss, then wander
-            if self.sector==None or self.position[2] < 4 or self.position[2] > 36:
+            #did we hit the player?
+            toPlayer = (player.position + player.height_vec/2) - self.position
+            distance = pyrr.vector.length(toPlayer)
+            if distance <= self.radius + player.radius:
+                self.direction *= -1
+                self.state = 2
+                self.t = 0
+            #did we hit the wall?
+            elif hitSomething:
                 self.direction = np.array([1-2*random.random() for i in range(3)],dtype=np.float32)
-                if self.position[2]<4:
-                    self.direction[2] = 1
-                elif self.position[2]>36:
-                    self.direction[2] = -1
                 self.direction = pyrr.vector.normalise(self.direction)
                 self.state = 0
-
-            else:
-                #hit player?
-                # ghost has radius of 4 and player has radius of 8,
-                # so if the ghost gets within 12 units they've hit.
-                # in that case, reverse direction and retreat
-                toPlayer = player.position - self.position
-                distance = pyrr.vector.length(toPlayer)
-                if distance <= 12:
-                    #attack player
-                    self.direction *= -1
-                    self.state = 2
-                    self.t = 0
+            self.updateModel()
+            return
         
         else:
             #retreat
             self.t += t/20
-            self.position += t*self.speed/20*self.direction
+            self.speed = 0.5
+            self.velocity = t*self.speed/20*self.direction
+            hitSomething = super().update()
+            if hitSomething:
+                self.direction = pyrr.vector.normalise(np.array([1-2*random.random() for i in range(3)],dtype=np.float32))
+            
             if self.t > 120:
                 #after some time the ghost is ready to attack again
                 self.state = 0
-            
-            if self.sector != None:
-                self.sector = self.sector.newSector(self.position)
-            else:
-                for obj in FLOORS:
-                    if obj.inSegment(self.position):
-                        self.sector = obj
-                        break
-            
-            if self.sector==None or self.position[2] < 4 or self.position[2] > 36:
-                self.direction = np.array([1-2*random.random() for i in range(3)],dtype=np.float32)
-                if self.position[2]<4:
-                    self.direction[2] = 1
-                elif self.position[2]>36:
-                    self.direction[2] = -1
-                self.direction = pyrr.vector.normalise(self.direction)
+            self.updateModel()
+            return
 
-        #model matrix
+    def updateModel(self):
         self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
+        theta = np.arctan2(self.direction[1],self.direction[2])+np.radians(135,dtype=np.float32)
+        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_z_rotation(theta = theta,dtype=np.float32))
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
     
     def draw(self):
-        TEXTURES["enemies"][0].use()
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
-        glBindVertexArray(self.graphics_model.getVAO())
-        glDrawArrays(GL_TRIANGLES,0,self.graphics_model.getVertexCount())
-        print(self.position)
+        self.graphics_model.draw()
 
 ################ Game Objects #################################################
 GAME_OBJECTS = []
@@ -1292,15 +1249,14 @@ FLOOR_MODELS = []
 LIGHTS = []
 ENEMIES = []
 TEXTURES = {"floor":[],"wall":[],"ceiling":[],"misc":[],"enemies":[]}
-BULLET_MODEL = ObjModel("models/","bullet.obj")
-GHOST_MODEL = ObjModel("models/","ghastly.obj")
-#BOUNCE_MODEL = AnimatedObjModel("models/wobble","wobble")
-#print("Importing textures")
 importTextures('textures.txt')
-#print("Creating models")
 createModels()
-#print("Importing data")
+BULLET_MODEL = ObjModel("models/","bullet.obj")
+BULLET_MODEL.texture = TEXTURES["misc"][2]
+GHOST_MODEL = ObjModel("models/","ghastly.obj")
+GHOST_MODEL.texture = TEXTURES["enemies"][0]
 player = importData('level.txt')
+#BOUNCE_MODEL = AnimatedObjModel("models/wobble","wobble")
 ################ Game Loop ####################################################
 running = True
 t = 0
