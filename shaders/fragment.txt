@@ -21,6 +21,12 @@ struct PointLight{
 	vec3 specular;
 };
 
+struct DirectionLight{
+    vec3 direction;
+    vec3 colour;
+    vec3 ambient;
+};
+
 struct Material {
     vec3 ambient;
     sampler2D diffuse;
@@ -36,12 +42,16 @@ uniform Material material;
 
 uniform vec3 viewPos;
 
+uniform DirectionLight sun;
+
 vec3 CalculatePointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
+
+vec3 CalculateDirectionLight(DirectionLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
 
 void main()
 {
     // fog calculation
-    vec3 fogColour = vec3(0.5);
+    vec3 fogColour = vec3(0.55,0.25,0.14);
     float fogAmount = pow(gl_FragCoord.z,32);
 
     if(!material.emissive){
@@ -52,9 +62,11 @@ void main()
 		    if(pointLights[i].isOn){
 			    lightOutput += CalculatePointLight(pointLights[i], fragNormal, fragPos, viewDir);
 		    }
-	    }
-        //Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
-        Colour = texture(material.diffuse, TexCoord);
+        }
+
+        lightOutput += CalculateDirectionLight(sun, fragNormal, fragPos, viewDir);
+
+        Colour = vec4(mix(lightOutput,fogColour,fogAmount), 1.0);
     }
     else{
         Colour = texture(material.diffuse, TexCoord);
@@ -80,4 +92,20 @@ vec3 CalculatePointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewD
     diffuse  *= light.strength*attenuation;
     specular *= light.strength*attenuation;
     return (ambient + diffuse + specular);
+}
+
+vec3 CalculateDirectionLight(DirectionLight light, vec3 normal, vec3 fragPos, vec3 viewDir)
+{
+    vec3 lightDir = -light.direction;
+    // diffuse shading
+    float diff = max(dot(normal, lightDir), 0.0);
+    // specular shading
+    vec3 reflectDir = reflect(light.direction, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);  
+    // combine results
+    vec3 ambient = light.ambient * vec3(texture(material.diffuse, TexCoord));
+    vec3 diffuse  = light.colour  * diff * vec3(texture(material.diffuse, TexCoord));
+    vec3 specular = light.colour * spec * vec3(texture(material.specular, TexCoord));
+    //return (ambient + diffuse + specular);
+    return (diffuse + specular);
 }

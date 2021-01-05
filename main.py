@@ -13,7 +13,6 @@ pygame.init()
 
 SCREEN_WIDTH = 960
 SCREEN_HEIGHT = 540
-#os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (SCREEN_WIDTH//2,SCREEN_HEIGHT//2)
 SCREEN = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT),
                                     pygame.DOUBLEBUF|pygame.OPENGL)
 CLOCK = pygame.time.Clock()
@@ -182,16 +181,12 @@ def import_textures(filename):
     with open(filename,'r') as f:
         line = f.readline()
         while line:
-            if line[0]=='w':
-                target = TEXTURES["wall"]
-            elif line[0]=='f':
-                target = TEXTURES["floor"]
+            if line[0]=='s':
+                target = TEXTURES["sector"]
             elif line[0]=='m':
                 target = TEXTURES["misc"]
-            elif line[0]=='e':
-                target = TEXTURES["enemies"]
             else:
-                target = TEXTURES["ceiling"]
+                target = TEXTURES["enemies"]
             beginning = line.find('(')
             line = line[beginning+1:-2].replace('\n','').split(',')
             ambient = float(line[0])
@@ -211,19 +206,16 @@ def create_models():
     for f in pathlib.Path("models/ceiling").iterdir():
         if f.suffix == ".obj":
             model = ObjModel("models/ceiling/",f.name)
-            model.texture = TEXTURES["ceiling"][0]
             CEILING_MODELS.append(model)
     #walls
     for f in pathlib.Path("models/wall").iterdir():
         if f.suffix == ".obj":
             model = ObjModel("models/wall/",f.name)
-            model.texture = TEXTURES["wall"][0]
             WALL_MODELS.append(model)
     #floors
     for f in pathlib.Path("models/floor").iterdir():
         if f.suffix == ".obj":
             model = ObjModel("models/floor/",f.name)
-            model.texture = TEXTURES["floor"][0]
             FLOOR_MODELS.append(model)
 
 def clear_lights():
@@ -392,7 +384,6 @@ class ObjModel:
             result = np.append(result,normal)
             #no transform needed for texture coordinates
             result = np.append(result,texture)
-        vertex_count = int(len(result)/8)
         return result
 
     def draw(self):
@@ -414,10 +405,10 @@ class StreamModel:
         self.vbo = glGenBuffers(1)
 
         self.texture = None
-    
+
     def takeVertexInput(self,vertices):
         self.vertices = np.append(self.vertices,vertices)
-    
+
     def finaliseModel(self):
         glUseProgram(shader)
         glBindVertexArray(self.vao)
@@ -435,7 +426,7 @@ class StreamModel:
         #texture attribute
         glEnableVertexAttribArray(2)
         glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(24))
-    
+
     def draw(self):
         glUseProgram(shader)
         self.texture.use()
@@ -451,6 +442,7 @@ class physicsObject:
         self.sector = None
         self.lastSector = None
         self.bounce = False
+        self.acceleration = np.array([0,0,0],dtype=np.float32)
 
     def setSector(self,sector):
         self.sector = sector
@@ -479,6 +471,7 @@ class physicsObject:
                     self.setSector(self.lastSector)
 
         if self.sector:
+            self.velocity += self.acceleration*t/20
             # check collisions with walls, floors and ceilings
             # return whether something was hit
             if self.bounce:
@@ -577,7 +570,7 @@ class physicsObject:
                     check *= -0.5
             temp += check
 
-        self.position += temp
+        self.position += temp*t/20
         #get new sector based on new position
         self.setSector(self.sector.newSector(self.position))
 
@@ -612,10 +605,16 @@ class Player(physicsObject):
         self.walking = False
         self.bullets = []
         self.up = np.array([0,0,1],dtype=np.float32)
-        projection_matrix = pyrr.matrix44.create_perspective_projection(45,
-                                                                        SCREEN_WIDTH/SCREEN_HEIGHT,
-                                                                        1,350,dtype=np.float32)
+        projection_matrix = pyrr.matrix44.create_perspective_projection(45,SCREEN_WIDTH/SCREEN_HEIGHT,1,430,dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
+        self.makeSun()
+        self.ground_z = 0
+
+    def makeSun(self):
+        glUseProgram(shader)
+        glUniform3fv(glGetUniformLocation(shader,'sun.direction'),1,np.array([0,-0.866,-0.5],dtype=np.float32))
+        glUniform3fv(glGetUniformLocation(shader,'sun.colour'),1,np.array([1,0.99,0.65],dtype=np.float32))
+        glUniform3fv(glGetUniformLocation(shader,'sun.ambient'),1,np.array([1,0.55,0.24],dtype=np.float32))
 
     def handle_keys(self):
         keystate = pygame.key.get_pressed()
@@ -635,6 +634,10 @@ class Player(physicsObject):
             self.walk_direction = 180
             self.walking = True
 
+        if keystate[pygame.K_SPACE] and self.position[2] == self.ground_z:
+            self.velocity[2] = 100
+            self.acceleration = np.array([0,0,-1],dtype=np.float32)
+
     def handle_mouse(self):
         new_pos = pygame.mouse.get_pos()
         pygame.mouse.set_pos(SCREEN_WIDTH/2,SCREEN_HEIGHT/2)
@@ -651,13 +654,13 @@ class Player(physicsObject):
                 self.focus()
         if event.type == pygame.MOUSEBUTTONUP and event.button==3:
             self.focusing = False
-    
+
     def walk(self):
         #physics stuff
         actual_direction = self.theta + self.walk_direction
         cos_ad = np.cos(np.radians(actual_direction),dtype=np.float32)
         sin_ad = np.sin(np.radians(actual_direction),dtype=np.float32)
-        self.velocity = np.array([cos_ad,sin_ad,0],dtype=np.float32)*t*self.speed/20
+        self.velocity = np.array([cos_ad,sin_ad,0],dtype=np.float32)*self.speed
 
         #animation stuff
 
@@ -760,7 +763,6 @@ class Player(physicsObject):
             self.velocity *= 0
         else:
             self.velocity *= 0.7
-        
 
     def update(self):
         glUseProgram(shader)
@@ -778,6 +780,7 @@ class Player(physicsObject):
 
         #physics behaviour
         super().update()
+        self.ground_z = self.sector.position[2]
 
         #lighting
         """
@@ -800,28 +803,15 @@ class Player(physicsObject):
         self.sin_theta = np.sin(np.radians(self.theta),dtype=np.float32)
 
         #get lookat
-        self.look_direction = np.array(\
-                                        [self.cos_phi*self.cos_theta,
-                                        self.cos_phi*self.sin_theta,
-                                        self.sin_phi],
-                                    dtype=np.float32)
+        self.look_direction = np.array([self.cos_phi*self.cos_theta,self.cos_phi*self.sin_theta,self.sin_phi],dtype=np.float32)
         self.look_direction *= 3
 
         camera_right = pyrr.vector3.cross(self.up,self.look_direction)
         camera_up = pyrr.vector3.cross(self.look_direction,camera_right)
         self.look_target = self.position + self.height_vec + self.look_direction
 
-        lookat_matrix = pyrr.matrix44.create_look_at(self.position + self.height_vec,
-                                                    self.look_target,
-                                                    camera_up,
-                                                    dtype=np.float32)
+        lookat_matrix = pyrr.matrix44.create_look_at(self.position + self.height_vec,self.look_target,camera_up,dtype=np.float32)
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,GL_FALSE,lookat_matrix)
-        projection_matrix = pyrr.matrix44.create_perspective_projection(45,
-                                                                        SCREEN_WIDTH/SCREEN_HEIGHT,
-                                                                        1,
-                                                                        350,
-                                                                        dtype=np.float32)
-        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
 
     def draw(self):
         glUseProgram(shader)
@@ -832,10 +822,6 @@ class Player(physicsObject):
         #draw sky
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.sky_model)
         self.sky.draw()
-
-        #draw bullets
-        for b in self.bullets:
-            b.draw()
 
     def shoot(self):
         if self.gun_state==0 and not self.walking:
@@ -959,23 +945,23 @@ class Sector:
             self.ceiling_models = []
             for x in range(length_grid):
                 for y in range(width_grid):
-                    pos = np.array([32*x,-32*y,0],dtype=np.float32)
+                    pos = np.array([32*x,-32*y,32],dtype=np.float32)
                     modelMatrix = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
                     self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
         
         self.graphics_model.finaliseModel()
-        self.graphics_model.texture = TEXTURES['floor'][0]
+        self.graphics_model.texture = TEXTURES['sector'][0]
 
     def addObject(self,obj):
         """ Add obj to the sector's set of active objects """
         if obj not in self.objects:
             self.objects.append(obj)
-    
+
     def removeObject(self,obj):
         """ Remove obj from the sector's set of active objects """
         if obj in self.objects:
             self.objects.pop(self.objects.index(obj))
-    
+
     def getCorners(self):
         return self.corners
 
@@ -1079,7 +1065,7 @@ class Sector:
     def clearUpdate(self):
         for obj in self.objects:
             obj.updated = False
-    
+
     def draw(self):
 
         glUseProgram(shader)
@@ -1193,16 +1179,16 @@ class Bullet(physicsObject):
         self.angle = np.array([0,0,0],dtype=np.float32)
         self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
         self.updated = False
+        self.active = True
 
     def update(self):
-        #position
-        self.angle += t*self.rotation/20
-        #self.position += t*self.velocity/20
-        if super().update():
-            self.destroy()
-        if self.sector==None:
-            self.destroy()
-        self.updateModel()
+        if self.active:
+            self.angle += t*self.rotation/20
+            self.updateModel()
+
+            hit = super().update()
+            if hit:
+                self.destroy()
 
     def updateModel(self):
         self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
@@ -1218,6 +1204,7 @@ class Bullet(physicsObject):
 
     def destroy(self):
         self.sector.removeObject(self)
+        self.active = False
 
 class Ghost(physicsObject):
     def __init__(self,position):
@@ -1237,7 +1224,7 @@ class Ghost(physicsObject):
         if self.state==0:
             #wander
             self.speed = 0.5
-            self.velocity = t*self.speed/20*self.direction
+            self.velocity = self.speed*self.direction
             hitSomething = super().update()
             #if we hit something, randomise the direction again
             if hitSomething:
@@ -1256,7 +1243,7 @@ class Ghost(physicsObject):
         elif self.state==1:
             #chase
             self.speed = 1
-            self.velocity = t*self.speed/20*self.direction
+            self.velocity = self.speed*self.direction
             hitSomething = super().update()
 
             #did we hit the player?
@@ -1277,7 +1264,7 @@ class Ghost(physicsObject):
             #retreat
             self.t += t/20
             self.speed = 0.5
-            self.velocity = t*self.speed/20*self.direction
+            self.velocity = self.speed*self.direction
             hitSomething = super().update()
             if hitSomething:
                 self.direction = random_3d()
@@ -1307,7 +1294,7 @@ WALL_MODELS = []
 FLOOR_MODELS = []
 LIGHTS = []
 ENEMIES = []
-TEXTURES = {"floor":[],"wall":[],"ceiling":[],"misc":[],"enemies":[]}
+TEXTURES = {"sector":[],"misc":[],"enemies":[]}
 import_textures('textures.txt')
 create_models()
 BULLET_MODEL = ObjModel("models/","bullet.obj")
