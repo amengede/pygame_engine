@@ -11,8 +11,8 @@ import os
 
 pygame.init()
 
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH = 960
+SCREEN_HEIGHT = 540
 #os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (SCREEN_WIDTH//2,SCREEN_HEIGHT//2)
 SCREEN = pygame.display.set_mode((SCREEN_WIDTH,SCREEN_HEIGHT),
                                     pygame.DOUBLEBUF|pygame.OPENGL)
@@ -36,6 +36,14 @@ with open("shaders/fragment.txt",'r') as f:
     fragment_src = f.readlines()
 
 shader = compileProgram(compileShader(vertex_src,GL_VERTEX_SHADER),
+                        compileShader(fragment_src,GL_FRAGMENT_SHADER))
+
+with open("shaders/vertex2D.txt",'r') as f:
+    vertex_src = f.readlines()
+with open("shaders/fragment2D.txt",'r') as f:
+    fragment_src = f.readlines()
+
+shader2D = compileProgram(compileShader(vertex_src,GL_VERTEX_SHADER),
                         compileShader(fragment_src,GL_FRAGMENT_SHADER))
 
 glUseProgram(shader)
@@ -100,25 +108,7 @@ def import_data(filename):
             if obj:
                 obj.tag = tag
             line = f.readline()
-        """
-            elif line[0]=='l':
-                #light
-                # l(x,y,z,r,g,b)
-                line = line[beginning+1:-2].replace('\n','').split(',')
-                l = [int(item) for item in line]
-                position = np.array([l[0],l[1],l[2]],dtype=np.float32)
-                colour = np.array([l[3],l[4],l[5]],dtype=np.float32)
-                obj = Light(position,colour)
-                LIGHTS.append(obj)
-            elif line[0]=='b':
-                #bouncing cube
-                # b(x,y,z)
-                line = line[2:-2].replace('\n','').split(',')
-                l = [int(item) for item in line]
-                obj = AnimationTester(np.array([l[0],l[1],l[2]],dtype=np.float32))
-                GAME_OBJECTS.append(obj)
-            
-            """
+        
         """
         for obj in FLOORS:
             print("Made Floor: "+str(obj))
@@ -178,65 +168,7 @@ def import_data(filename):
     player.setSector(player.recalculateSector())
     #find which segment each enemy is in
     for obj in ENEMIES:
-        obj.sector = obj.recalculateSector()
-    """
-    #find which segment each light is in
-    for obj in LIGHTS:
-        for obj2 in FLOORS:
-            if obj2.inSegment(obj.position):
-                obj.setCurrentSector(obj2)
-                obj2.addLight(obj)
-                break
-    
-    #add walls to sectors
-    for obj in FLOORS:
-        #print("Checking: " + str(obj))
-        A = obj.pos_a
-        B = obj.pos_b
-        C = obj.pos_c
-        D = obj.pos_d
-        for obj2 in WALLS:
-            #print("\t against: " + str(obj2))
-            hasA = False
-            hasB = False
-            hasC = False
-            hasD = False
-            corners = obj2.getCorners()
-            #do any corners match?
-            for corner in corners:
-                if A[0] == corner[0] and A[1] == corner[1]:
-                    #print(str(obj) + " has " + str(A) + " , " + str(obj2) + " has " + str(corner))
-                    hasA = True
-                    continue
-                elif B[0] == corner[0] and B[1] == corner[1]:
-                    #print(str(obj) + " has " + str(B) + " , " + str(obj2) + " has " + str(corner))
-                    hasB = True
-                    continue
-                elif C[0] == corner[0] and C[1] == corner[1]:
-                    #print(str(obj) + " has " + str(C) + " , " + str(obj2) + " has " + str(corner))
-                    hasC = True
-                    continue
-                elif D[0] == corner[0] and D[1] == corner[1]:
-                    #print(str(obj) + " has " + str(D) + " , " + str(obj2) + " has " + str(corner))
-                    hasD = True
-                    continue
-            if hasA and hasB:
-                obj.wallAB = obj2
-                #print(str(obj) + " connects to " + str(obj2))
-                continue
-            elif hasB and hasC:
-                obj.wallBC = obj2
-                #print(str(obj)+" connects to "+str(obj2))
-                continue
-            elif hasC and hasD:
-                obj.wallCD = obj2
-                #print(str(obj)+" connects to "+str(obj2))
-                continue
-            elif hasD and hasA:
-                obj.wallDA = obj2
-                #print(str(obj)+" connects to "+str(obj2))
-                continue
-    """
+        obj.setSector(obj.recalculateSector())
     return player
 
 def import_textures(filename):
@@ -299,6 +231,7 @@ def clear_lights():
         Reset system by disabling all lights.
         Call this at the start of the game loop before update calls.
     """
+    glUseProgram(shader)
     for i in range(MAX_LIGHTS):
         glUniform1fv(glGetUniformLocation(shader,f'pointLights[{i}].isOn'),1,False)
 
@@ -312,6 +245,7 @@ def add_lights(sector):
         Parameters:
             sector (Sector): a reference to the sector to branch out from
     """
+    glUseProgram(shader)
     #look at lights in current sector
     next_search = []
     searched = []
@@ -345,6 +279,7 @@ def random_3d():
 
 class ObjModel:
     def __init__(self,folderpath,filename):
+        glUseProgram(shader)
         v = []
         vt = []
         vn = []
@@ -434,80 +369,78 @@ class ObjModel:
         glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(24))
         self.texture = None
 
+    def getTransformedVertices(self,model):
+        """ Return a the set of vertices from the object, after applying the model transformation """
+        result = np.empty(0,dtype=np.float32)
+        #for normal transformations
+        model33 = pyrr.matrix33.create_from_matrix44(model,dtype=np.float32)
+
+        #each vertex has position (3), normal (3) and texture (2), so 8 elements
+        vertex_count = int(len(self.vertices)/8)
+        for v in range(vertex_count):
+            position = np.array([self.vertices[v*8],self.vertices[v*8+1],self.vertices[v*8+2]],dtype=np.float32)
+            normal = np.array([self.vertices[v*8+3],self.vertices[v*8+4],self.vertices[v*8+5]],dtype=np.float32)
+            texture = np.array([self.vertices[v*8+6],self.vertices[v*8+7]],dtype=np.float32)
+
+            #apply full model matrix to position
+            pos4 = np.append(position,np.array([1],dtype=np.float32))
+            pos4 = pyrr.matrix44.multiply(pos4,model)
+            position = np.delete(pos4,3)
+            result = np.append(result,position)
+            #apply reduced transform to normals
+            normal = pyrr.matrix33.multiply(normal,model33)
+            result = np.append(result,normal)
+            #no transform needed for texture coordinates
+            result = np.append(result,texture)
+        vertex_count = int(len(result)/8)
+        return result
+
     def draw(self):
+        glUseProgram(shader)
         self.texture.use()
         glBindVertexArray(self.vao)
         glDrawArrays(GL_TRIANGLES,0,self.vertexCount)
 
-class AnimatedObjModel:
-    def __init__(self,folderpath,modelName):
+class StreamModel:
+    # can accept streams of vertex data, rather than a file
+    def __init__(self):
+        glUseProgram(shader)
 
-        self.attributeMap = {'V':0,'N':1,'T':2}
-        self.datatypeMap = {'F':GL_FLOAT}
+        #set up model variables, ready to accept data
+        self.vertices = np.empty(0,dtype=np.float32)
 
-        self.attributes = []
-        self.folderpath = folderpath
-        self.modelName = modelName
-        self.framecount = 0
-        for f in pathlib.Path("./"+folderpath).iterdir():
-            if f.is_file():
-                self.framecount += 0.5
-        self.framecount = int(self.framecount)
+        self.vao = glGenVertexArrays(1)
 
-        scene = pwf.Wavefront(folderpath+"/"+self.modelName+"_000001.obj")
-        for name, material in scene.materials.items():
-            vertex_format = material.vertex_format.split("_")
-            vertices = material.vertices
+        self.vbo = glGenBuffers(1)
 
-        stride = 0
-        for item in vertex_format:
-            attributeLocation = self.attributeMap[item[0]]
-            attributeStart = stride
-            attributeLength = int(item[1])
-            attributeDataType = self.datatypeMap[item[2]]
-            stride += attributeLength
-            self.attributes.append((attributeLocation,attributeLength,
-                                    attributeDataType,attributeStart*4))
+        self.texture = None
+    
+    def takeVertexInput(self,vertices):
+        self.vertices = np.append(self.vertices,vertices)
+    
+    def finaliseModel(self):
+        glUseProgram(shader)
+        glBindVertexArray(self.vao)
 
-        self._VAO = glGenVertexArrays(1)
-        glBindVertexArray(self._VAO)
+        glBindBuffer(GL_ARRAY_BUFFER,self.vbo)
+        glBufferData(GL_ARRAY_BUFFER,self.vertices.nbytes,self.vertices,GL_STATIC_DRAW)
+        self.vertexCount = int(len(self.vertices)/8)
 
-        vertices = np.array(vertices,dtype=np.float32)
-
-        self._VBO = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER,self._VBO)
-        glBufferData(GL_ARRAY_BUFFER,vertices.nbytes,vertices,GL_STATIC_DRAW)
-        self._vertexCount = int(len(vertices)/stride)
-
-        for a in self.attributes:
-            glEnableVertexAttribArray(a[0])
-            glVertexAttribPointer(a[0],a[1],a[2],GL_FALSE,vertices.itemsize*stride,ctypes.c_void_p(a[3]))
-
-    def fetchFrame(self,frameNumber):
-        frame = int(frameNumber)%self.framecount
-        frame = max(frame,1)
-        filepath = f"{self.folderpath}/{self.modelName}_{frame:06}.obj"
-
-        scene = pwf.Wavefront(filepath)
-        for name, material in scene.materials.items():
-            vertices = material.vertices
-
-        glBindVertexArray(self._VAO)
-
-        vertices = np.array(vertices,dtype=np.float32)
-
-        glBindBuffer(GL_ARRAY_BUFFER,self._VBO)
-        glBufferData(GL_ARRAY_BUFFER,vertices.nbytes,vertices,GL_STATIC_DRAW)
-
-    def getFrameCount(self):
-        return self.framecount
-
-    def getVAO(self,frameNumber):
-        self.fetchFrame(frameNumber)
-        return self._VAO
-
-    def getVertexCount(self):
-        return self._vertexCount
+        #position attribute
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(0))
+        #normal attribute
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(12))
+        #texture attribute
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,self.vertices.itemsize*8,ctypes.c_void_p(24))
+    
+    def draw(self):
+        glUseProgram(shader)
+        self.texture.use()
+        glBindVertexArray(self.vao)
+        glDrawArrays(GL_TRIANGLES,0,self.vertexCount)
 
 class physicsObject:
     def __init__(self,position,size,velocity=np.array([0,0,0],dtype=np.float32)):
@@ -517,9 +450,18 @@ class physicsObject:
         self.velocity = velocity
         self.sector = None
         self.lastSector = None
+        self.bounce = False
 
     def setSector(self,sector):
         self.sector = sector
+        if sector != self.sector:
+            if self.sector != None:
+                #remove self from the previous sector
+                self.sector.removeObject(self)
+        self.lastSector = self.sector
+        self.sector = sector
+        #add self to new sector
+        self.sector.addObject(self)
 
     def recalculateSector(self):
         for sector in SECTORS:
@@ -530,65 +472,122 @@ class physicsObject:
     def update(self):
         #failsafe: if the object is not in a sector, attempt to recalculate
         if not self.sector:
-            self.sector = self.recalculateSector()
+            self.setSector(self.recalculateSector())
             if not self.sector and self.lastSector:
-                self.sector = self.lastSector.newSector(self.position)
+                self.setSector(self.lastSector.newSector(self.position))
                 if not self.sector:
-                    self.sector = self.lastSector
+                    self.setSector(self.lastSector)
 
         if self.sector:
             # check collisions with walls, floors and ceilings
             # return whether something was hit
-            hitSomething = False
-            #check each component of the object's velocity,
-            # if there's a collision then don't move in that direction
-            temp = np.array([0,0,0],dtype=np.float32)
-
-            check = np.array([self.velocity[0],0,0],dtype=np.float32)
-            if self.sector.checkCollisions(self.position + self.radius*check):
-                hitSomething = True
+            if self.bounce:
+                return self.moveBounce()
             else:
-                temp += check
+                return self.moveSquish()
 
-            check = np.array([0,self.velocity[1],0],dtype=np.float32)
-            if self.sector.checkCollisions(self.position + self.radius*check):
+    def moveSquish(self):
+        """ Attempt to move the object with its velocity.
+        If an obstacle is hit, stop/slide.
+        Return whether an obstacle was hit """
+
+        hitSomething = False
+
+        temp = np.array([0,0,0],dtype=np.float32)
+
+        check = np.array([self.velocity[0],0,0],dtype=np.float32)
+        if self.sector.checkCollisions(self.position + self.radius*check):
+            hitSomething = True
+        else:
+            temp += check
+
+        check = np.array([0,self.velocity[1],0],dtype=np.float32)
+        if self.sector.checkCollisions(self.position + self.radius*check):
+            hitSomething = True
+        else:
+            temp += check
+
+        if self.velocity[2] > 0:
+            check =  np.array([0,0,self.velocity[2]],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + self.height + check):
+                self.velocity[2] *= -0.5
                 hitSomething = True
-            else:
-                temp += check
 
-            if self.velocity[2] > 0:
-                check =  np.array([0,0,self.velocity[2]],
-                                                    dtype=np.float32)
-                if self.sector.checkCollisions(self.position + self.height*check):
-                    self.velocity[2] *= -0.5
-                    hitSomething = True
+        elif self.velocity[2] < 0:
+            check = np.array([0,0,self.velocity[2]],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + check):
+                hitSomething = True
+                #if the object is going slowly enough
+                # we can conclude that they've hit the ground
+                if self.velocity[2]>-0.5:
+                    check[2] = 0
+                    self.position[2] = self.sector.position[2]
+                else:
+                    #bounce
+                    check[2] *= -0.5
+            # height colisions are a bit different, the object can't control them as much and
+            # must bounce
+            temp += check
 
-            elif self.velocity[2] < 0:
-                check = np.array([0,0,self.velocity[2]],dtype=np.float32)
-                if self.sector.checkCollisions(self.position + check):
-                    #if the object is going slowly enough
-                    # we can conclude that they've hit the ground
-                    if self.velocity[2]>-0.5:
-                        check[2] = 0
-                        self.position[2] = self.sector.position[2]
-                    else:
-                        #bounce
-                        check[2] *= -0.5
-                        hitSomething = True
-                #temp += check
+        self.position += temp*t/20
+        #get new sector based on new position
+        if self.sector:
+            self.setSector(self.sector.newSector(self.position))
 
-            self.position += temp
-            #get new sector based on new position
-            self.sector = self.sector.newSector(self.position)
-            if self.lastSector != self.sector:
-                self.lastSector = self.sector
+        return hitSomething
 
-            self.velocity *= 0.5
+    def moveBounce(self):
+        """ Attempt to move the object with its velocity.
+        If an obstacle is hit, rebound.
+        Return whether an obstacle was hit """
 
-            return hitSomething
+        hitSomething = False
+
+        temp = np.array([0,0,0],dtype=np.float32)
+
+        check = np.array([self.velocity[0],0,0],dtype=np.float32)
+        if self.sector.checkCollisions(self.position + self.radius*check):
+            hitSomething = True
+            check *= -0.5
+        temp += check
+
+        check = np.array([0,self.velocity[1],0],dtype=np.float32)
+        if self.sector.checkCollisions(self.position + self.radius*check):
+            hitSomething = True
+            check *= -0.5
+        temp += check
+
+        if self.velocity[2] > 0:
+            check =  np.array([0,0,self.velocity[2]],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + self.height + check):
+                self.velocity[2] *= -0.5
+                hitSomething = True
+
+        elif self.velocity[2] < 0:
+            check = np.array([0,0,self.velocity[2]],dtype=np.float32)
+            if self.sector.checkCollisions(self.position + check):
+                hitSomething = True
+                #if the object is going slowly enough
+                # we can conclude that they've hit the ground
+                if self.velocity[2]>-0.5:
+                    check[2] = 0
+                    self.position[2] = self.sector.position[2]
+                else:
+                    #bounce
+                    check *= -0.5
+            temp += check
+
+        self.position += temp
+        #get new sector based on new position
+        self.setSector(self.sector.newSector(self.position))
+
+        self.velocity *= 0.5
+
+        return hitSomething
 
 class Player(physicsObject):
     def __init__(self,position,direction):
+        glUseProgram(shader)
         super().__init__(position,[16,16])
         self.theta = direction
         self.phi = 0
@@ -644,6 +643,15 @@ class Player(physicsObject):
         self.phi -= t*(new_pos[1] - SCREEN_HEIGHT/2)/15
         self.phi = min(max(self.phi,-90),90)
 
+    def handle_event(self,event):
+        if event.type==pygame.MOUSEBUTTONDOWN:
+            if event.button==1:
+                self.shoot()
+            elif event.button == 3:
+                self.focus()
+        if event.type == pygame.MOUSEBUTTONUP and event.button==3:
+            self.focusing = False
+    
     def walk(self):
         #physics stuff
         actual_direction = self.theta + self.walk_direction
@@ -746,8 +754,16 @@ class Player(physicsObject):
             self.focus_t -= t/20
             if self.focus_t <= 0:
                 self.focus_t = 0
+        
+        #slow down
+        if pyrr.vector.length(self.velocity)<0.1:
+            self.velocity *= 0
+        else:
+            self.velocity *= 0.7
+        
 
     def update(self):
+        glUseProgram(shader)
         #keys
         self.handle_keys()
 
@@ -770,22 +786,14 @@ class Player(physicsObject):
         """
 
         #send camera position to shader
-        self.height_vec = np.array(\
-                                    [0,
-                                    0,
-                                    self.height + 4*np.sin(np.radians(10*self.walk_t))\
-                                    ],
-                                dtype=np.float32)
+        self.height_vec = np.array([0,0,self.height + 4*np.sin(np.radians(10*self.walk_t))],dtype=np.float32)
         glUniform3fv(glGetUniformLocation(shader,"viewPos"),1,self.position + self.height_vec)
 
         self.updateGun()
         self.updateSky()
 
-        #update bullets
-        for b in self.bullets:
-            b.update()
-
     def look(self):
+        glUseProgram(shader)
         self.cos_phi = np.cos(np.radians(self.phi),dtype=np.float32)
         self.sin_phi = np.sin(np.radians(self.phi),dtype=np.float32)
         self.cos_theta = np.cos(np.radians(self.theta),dtype=np.float32)
@@ -816,6 +824,7 @@ class Player(physicsObject):
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,GL_FALSE,projection_matrix)
 
     def draw(self):
+        glUseProgram(shader)
         #draw gun
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.gun_model)
         self.gun.draw()
@@ -832,11 +841,8 @@ class Player(physicsObject):
         if self.gun_state==0 and not self.walking:
             self.gun_state = 1
             self.gun_t = -90
-            self.bullets.append(\
-                            Bullet(self.position+self.height_vec+2*self.look_direction,
-                                    self.look_direction,
-                                    self.sector,
-                                    self))
+            if self.sector:
+                self.sector.addObject(Bullet(self.position+self.height_vec+2*self.look_direction,self.look_direction,self.sector))
 
     def focus(self):
         if not self.walking:
@@ -863,6 +869,7 @@ class Sector:
 
         #models
         self.model = pyrr.matrix44.create_identity(dtype=np.float32)
+        self.graphics_model = StreamModel()
         self.buildPieces(bottom_wall,right_wall,top_wall,left_wall,floor,ceiling)
 
         #connection info
@@ -871,7 +878,10 @@ class Sector:
         self.connectsBC = None
         self.connectsCD = None
         self.connectsDA = None
+
+        #data stored/managed by sector
         self.lights = []
+        self.objects = []
 
     def buildPieces(self,bottom_wall,right_wall,top_wall,left_wall,floor,ceiling):
         length_grid = int(self.length)//32
@@ -879,83 +889,93 @@ class Sector:
         height_grid = int(self.height)//32
 
         if bottom_wall < 0:
-            self.bottom_wall = None
             self.has_bottom_wall = False
         else:
-            self.bottom_wall = WALL_MODELS[bottom_wall]
+            modelToStream = WALL_MODELS[bottom_wall]
             self.has_bottom_wall = True
-            self.bottom_wall_models = []
             for x in range(length_grid):
                 for z in range(height_grid):
                     pos = np.array([32*x,0,32*z],dtype=np.float32)
-                    model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(0)),pyrr.matrix44.create_from_translation(self.pos_a + pos))
-                    self.bottom_wall_models.append(model)
+                    rotation = pyrr.matrix44.create_from_z_rotation(theta=np.radians(0),dtype=np.float32)
+                    translation = pyrr.matrix44.create_from_translation(self.pos_a + pos,dtype=np.float32)
+                    modelMatrix = pyrr.matrix44.multiply(rotation,translation)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
 
         if right_wall < 0:
-            self.right_wall = None
             self.has_right_wall = False
         else:
-            self.right_wall = WALL_MODELS[right_wall]
+            modelToStream = WALL_MODELS[right_wall]
             self.has_right_wall = True
-            self.right_wall_models = []
             for y in range(width_grid):
                 for z in range(height_grid):
                     pos = np.array([0,32*y,32*z],dtype=np.float32)
-                    model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-90)),pyrr.matrix44.create_from_translation(self.pos_b + pos))
-                    self.right_wall_models.append(model)
+                    rotation = pyrr.matrix44.create_from_z_rotation(theta=np.radians(-90),dtype=np.float32)
+                    translation = pyrr.matrix44.create_from_translation(self.pos_b + pos,dtype=np.float32)
+                    modelMatrix = pyrr.matrix44.multiply(rotation,translation)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
 
         if top_wall < 0:
-            self.top_wall = None
             self.has_top_wall = False
         else:
-            self.top_wall = WALL_MODELS[top_wall]
+            modelToStream = WALL_MODELS[top_wall]
             self.has_top_wall = True
-            self.top_wall_models = []
             for x in range(length_grid):
                 for z in range(height_grid):
                     pos = np.array([-32*x,0,32*z],dtype=np.float32)
-                    model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-180)),pyrr.matrix44.create_from_translation(self.pos_c + pos))
-                    self.top_wall_models.append(model)
+                    rotation = pyrr.matrix44.create_from_z_rotation(theta=np.radians(-180),dtype=np.float32)
+                    translation = pyrr.matrix44.create_from_translation(self.pos_c + pos,dtype=np.float32)
+                    modelMatrix = pyrr.matrix44.multiply(rotation,translation)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
 
         if left_wall < 0:
-            self.left_wall = None
             self.has_left_wall = False
         else:
-            self.left_wall = WALL_MODELS[left_wall]
+            modelToStream = WALL_MODELS[left_wall]
             self.has_left_wall = True
-            self.left_wall_models = []
             for y in range(width_grid):
                 for z in range(height_grid):
                     pos = np.array([0,-32*y,32*z],dtype=np.float32)
-                    model = pyrr.matrix44.multiply(pyrr.matrix44.create_from_z_rotation(theta=np.radians(-270)),pyrr.matrix44.create_from_translation(self.pos_d + pos))
-                    self.left_wall_models.append(model)
+                    rotation = pyrr.matrix44.create_from_z_rotation(theta=np.radians(-270),dtype=np.float32)
+                    translation = pyrr.matrix44.create_from_translation(self.pos_d + pos,dtype=np.float32)
+                    modelMatrix = pyrr.matrix44.multiply(rotation,translation)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
 
         if floor < 0:
-            self.floor = None
             self.has_floor = False
         else:
-            self.floor = FLOOR_MODELS[floor]
+            modelToStream = FLOOR_MODELS[floor]
             self.has_floor = True
-            self.floor_models = []
             for x in range(length_grid):
                 for y in range(width_grid):
                     pos = np.array([32*x,-32*y,0],dtype=np.float32)
-                    model = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
-                    self.floor_models.append(model)
+                    modelMatrix = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
 
         if ceiling < 0:
-            self.ceiling = None
             self.has_ceiling = False
         else:
-            self.ceiling = CEILING_MODELS[ceiling]
+            modelToStream = CEILING_MODELS[ceiling]
             self.has_ceiling = True
             self.ceiling_models = []
             for x in range(length_grid):
                 for y in range(width_grid):
                     pos = np.array([32*x,-32*y,0],dtype=np.float32)
-                    model = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
-                    self.ceiling_models.append(model)
+                    modelMatrix = pyrr.matrix44.create_from_translation(self.position+pos,dtype=np.float32)
+                    self.graphics_model.takeVertexInput(modelToStream.getTransformedVertices(modelMatrix))
+        
+        self.graphics_model.finaliseModel()
+        self.graphics_model.texture = TEXTURES['floor'][0]
 
+    def addObject(self,obj):
+        """ Add obj to the sector's set of active objects """
+        if obj not in self.objects:
+            self.objects.append(obj)
+    
+    def removeObject(self,obj):
+        """ Remove obj from the sector's set of active objects """
+        if obj in self.objects:
+            self.objects.pop(self.objects.index(obj))
+    
     def getCorners(self):
         return self.corners
 
@@ -1051,43 +1071,23 @@ class Sector:
         return False
 
     def update(self):
-        pass
+        for obj in self.objects:
+            if not obj.updated:
+                obj.update()
+                obj.updated = True
 
+    def clearUpdate(self):
+        for obj in self.objects:
+            obj.updated = False
+    
     def draw(self):
-        #floor
-        if self.has_floor:
-            for model in self.floor_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.floor.draw()
-        
-        #bottom wall
-        if self.has_bottom_wall:
-            for model in self.bottom_wall_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.bottom_wall.draw()
-        #right wall
-        if self.has_right_wall:
-            for model in self.right_wall_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.right_wall.draw()
 
-        #top wall
-        if self.has_top_wall:
-            for model in self.top_wall_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.top_wall.draw()
+        glUseProgram(shader)
+        glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.model)
+        self.graphics_model.draw()
 
-        #left wall
-        if self.has_left_wall:
-            for model in self.left_wall_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.left_wall.draw()
-
-        #ceiling
-        if self.has_ceiling:
-            for model in self.ceiling_models:
-                glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,model)
-                self.ceiling.draw()
+        for obj in self.objects:
+            obj.draw()
 
     def __str__(self):
         return self.tag
@@ -1101,7 +1101,7 @@ class Light:
         self.colour = colour
         self.active = True
         self.height = 1
-        self.velocity = np.array([1 - 2*random.random(),1 - 2*random.random(),1 - 2*random.random()],dtype=np.float32)
+        self.velocity = random_3d()
         self.tag = ""
         self.currentSector = None
 
@@ -1109,6 +1109,7 @@ class Light:
         self.currentSector = newSector
 
     def update(self):
+        glUseProgram(shader)
         global CURRENT_LIGHTS
         if self.active and CURRENT_LIGHTS<MAX_LIGHTS:
             glUniform1fv(glGetUniformLocation(shader,f'pointLights[{CURRENT_LIGHTS}].isOn'),1,True)
@@ -1136,6 +1137,7 @@ class Light:
 
 class Material:
     def __init__(self,ambient,diffuse,specular,shininess,emissive):
+        glUseProgram(shader)
         #ambient
         self.ambient = np.array([ambient,ambient,ambient],dtype=np.float32)
 
@@ -1173,6 +1175,7 @@ class Material:
         self.emissive = emissive
 
     def use(self):
+        glUseProgram(shader)
         glUniform3fv(glGetUniformLocation(shader,"material.ambient"),1,self.ambient)
         glUniform1fv(glGetUniformLocation(shader,"material.shininess"),1,self.shininess)
         glUniform1iv(glGetUniformLocation(shader,"material.emissive"),1,self.emissive)
@@ -1182,22 +1185,26 @@ class Material:
         glBindTexture(GL_TEXTURE_2D,self.specular)
 
 class Bullet(physicsObject):
-    def __init__(self,position,velocity,sector,parent):
+    def __init__(self,position,velocity,sector):
         super().__init__(position.copy(),[1,1],velocity.copy())
         self.sector = sector
         self.graphics_model = BULLET_MODEL
-        self.parent = parent
         self.rotation = random_3d()
         self.angle = np.array([0,0,0],dtype=np.float32)
         self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
+        self.updated = False
 
     def update(self):
         #position
         self.angle += t*self.rotation/20
-        self.position += t*self.velocity/20
-        self.sector = self.sector.newSector(self.position)
+        #self.position += t*self.velocity/20
+        if super().update():
+            self.destroy()
         if self.sector==None:
             self.destroy()
+        self.updateModel()
+
+    def updateModel(self):
         self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_x_rotation(theta = self.angle[0],dtype=np.float32))
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_y_rotation(theta = self.angle[1],dtype=np.float32))
@@ -1205,35 +1212,12 @@ class Bullet(physicsObject):
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
 
     def draw(self):
+        glUseProgram(shader)
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
         self.graphics_model.draw()
 
     def destroy(self):
-        self.parent.bullets.pop(self.parent.bullets.index(self))
-
-class AnimationTester:
-    def __init__(self,position):
-        self.position = position
-        self.graphics_model = BOUNCE_MODEL
-        self.animation_frame = 1
-        self.frame_count = self.graphics_model.getFrameCount()
-
-    def update(self):
-        #self.vertices = x*self.vertices_last + (1-x)*self.vertices_next
-        #animation frame
-        #1000 milliseconds/60fps = about 16.67 milliseconds per frame
-        self.animation_frame += t/16.67
-        if self.animation_frame > self.frame_count:
-            self.animation_frame -= self.frame_count
-        #model matrix
-        self.transform_model = pyrr.matrix44.create_identity(dtype=np.float32)
-        self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
-
-    def draw(self):
-        TEXTURES["floor"][1].use()
-        glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
-        glBindVertexArray(self.graphics_model.getVAO(self.animation_frame))
-        glDrawArrays(GL_TRIANGLES,0,self.graphics_model.getVertexCount())
+        self.sector.removeObject(self)
 
 class Ghost(physicsObject):
     def __init__(self,position):
@@ -1311,6 +1295,7 @@ class Ghost(physicsObject):
         self.transform_model = pyrr.matrix44.multiply(self.transform_model,pyrr.matrix44.create_from_translation(self.position,dtype=np.float32))
 
     def draw(self):
+        glUseProgram(shader)
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,GL_FALSE,self.transform_model)
         self.graphics_model.draw()
 
@@ -1330,7 +1315,6 @@ BULLET_MODEL.texture = TEXTURES["misc"][2]
 GHOST_MODEL = ObjModel("models/","ghastly.obj")
 GHOST_MODEL.texture = TEXTURES["enemies"][0]
 player = import_data('level.txt')
-#BOUNCE_MODEL = AnimatedObjModel("models/wobble","wobble")
 ################ Game Loop ####################################################
 running = True
 t = 0
@@ -1339,24 +1323,20 @@ while running:
     for event in pygame.event.get():
         if event.type==pygame.QUIT or (event.type==pygame.KEYDOWN and event.key==pygame.K_ESCAPE):
             running = False
-        if event.type==pygame.MOUSEBUTTONDOWN:
-            if event.button==1:
-                player.shoot()
-            elif event.button == 3:
-                player.focus()
-        if event.type == pygame.MOUSEBUTTONUP and event.button==3:
-            player.focusing = False
+        player.handle_event(event)
     ################ Update ###################################################
     CURRENT_LIGHTS = 0
     clear_lights()
-    for obj in GAME_OBJECTS:
-        obj.update()
+    for sector in SECTORS:
+        sector.clearUpdate()
+    for sector in SECTORS:
+        sector.update()
     ################ Render ###################################################
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
-    for obj in GAME_OBJECTS:
-        obj.draw()
+    for sector in SECTORS:
+        sector.draw()
     ################ Framerate ################################################
-    t = CLOCK.get_time()
+    t = min(50,CLOCK.get_time())
     CLOCK.tick()
     fps = CLOCK.get_fps()
     pygame.display.set_caption("Running at "+str(int(fps))+" fps")
