@@ -1,4 +1,4 @@
-p(10.5,32.5,90)
+#order of creation: sectors, then player, then enemies
 #sector: x_top_left, y_top_left,z_top_left, length(x), width(y), height(z), bottom_wall, right_wall, top_wall, left_wall, ground_model, ceiling_model
 s1(4,36,0,3,3,1,-1,0,0,0,0,-1)
 s2(4,33,0,3,1,1,-1,-1,-1,0,0,-1)
@@ -7,4 +7,11 @@ s4(9,37,0,4,4,1,-1,0,0,0,0,-1)
 s5(9,33,0,4,1,1,-1,0,-1,-1,0,-1)
 s6(9,32,0,4,3,1,0,0,-1,0,0,-1)
 s7(7,33,0,2,1,1,0,-1,0,-1,0,-1)
-g1(5,35,0.5)
+#player:x,y,z,direction
+p(10.5,32.5,90)
+#ghost: x,y,z
+#g1(5,35,0.5)
+#box: x,y,z
+b1(11,36,0)
+#b2(11.25,35.75,0.1)
+#b3(11.5,35.5,0.2)

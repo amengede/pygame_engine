@@ -107,5 +107,5 @@ vec3 CalculateDirectionLight(DirectionLight light, vec3 normal, vec3 fragPos, ve
     vec3 diffuse  = light.colour  * diff * vec3(texture(material.diffuse, TexCoord));
     vec3 specular = light.colour * spec * vec3(texture(material.specular, TexCoord));
     //return (ambient + diffuse + specular);
-    return (diffuse + specular);
+    return (ambient + diffuse + specular);
 }
